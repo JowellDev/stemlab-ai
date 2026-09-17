@@ -44,6 +44,33 @@ jobs:
 
       - run: pnpm build
 
+  e2e:
+    name: end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Installer le navigateur Playwright
+        run: pnpm --filter @stemlab/web exec playwright install --with-deps chromium
+
+      - run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+
   ml:
     name: ml service
     runs-on: ubuntu-latest
