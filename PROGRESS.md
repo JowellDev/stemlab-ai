@@ -89,3 +89,34 @@
 - **Qualité de séparation sur de la musique réelle** : les morceaux de test sont
   synthétisés, et Demucs est entraîné sur de l'audio réel. Ces fichiers valident
   l'enchaînement du pipeline, pas la qualité de la séparation.
+
+---
+
+## Phase 3 — Service de jobs (2026-09-17)
+
+**Definition of Done — vérifiée par exécution réelle**
+
+Stack complète lancée localement : Redis, S3, API, worker ARQ et un receveur de
+webhook vérifiant la signature.
+
+| Critère                               | Vérification                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| Job de bout en bout depuis un `curl`  | ✅ `202 Accepted` → 4 stems dans S3, webhook de succès signé reçu                |
+| Progression incrémentale              | ✅ `GET /jobs/{id}` et webhooks `job.progress` (pas de 10 points)                |
+| Webhook signé HMAC                    | ✅ signature vérifiée par le receveur à chaque livraison                         |
+| Idempotence par checksum              | ✅ second dépôt → `deduplicated: true`, webhook rejoué, aucun retraitement       |
+| Échec simulé correctement remonté     | ✅ objet absent → `job.failed` non rejouable + file de rebut                     |
+| Reessais avec recul exponentiel       | ✅ 5 s puis 20 s, trois essais au total                                          |
+| Timeout                               | ✅ 600 s, aligné sur le plafond du worker GPU Modal                              |
+| File de rebut                         | ✅ `GET /dead-letters`, bornée à 1000 entrées                                    |
+| Redémarrage du worker en cours de job | ✅ interrompu à 10 %, repris à l'essai 2 sur un worker neuf, terminé normalement |
+
+**Mesures de l'exécution réelle**
+
+| Étape                 | Résultat                                                             |
+| --------------------- | -------------------------------------------------------------------- |
+| Morceau de 15 s       | 14,9 s de traitement, 4 stems                                        |
+| Morceau de 128 s      | 53,1 s de traitement, 80 segments d'accords, `A minor`, `120,01 BPM` |
+| Reprise après coupure | job terminé à l'essai 2, aucun stem manquant                         |
+
+**Tests** : 205 côté Python, 58 côté contrats. `ruff` et `mypy --strict` propres.

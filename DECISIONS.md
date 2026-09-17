@@ -357,3 +357,93 @@ sortie autrement qu'à l'oreille.
 **Limite assumée.** Demucs est entraîné sur de la musique réelle. Sur du matériel
 synthétique, il répartit le contenu entre les stems de façon peu représentative. Ces
 morceaux valident **l'enchaînement du pipeline**, pas la qualité de la séparation.
+
+---
+
+## 2026-09-17 — Un jeu de vecteurs partagé garantit que les deux signatures concordent
+
+**Problème.** La signature HMAC existe en deux implémentations : TypeScript
+(`packages/contracts/src/signature.ts`) et Python (`apps/ml/src/ml/security.py`).
+Chacune peut passer ses propres tests tout en étant incompatible avec l'autre — un
+encodage UTF-8 différent, une sérialisation qui diffère d'un espace, et tout le canal
+interne tombe.
+
+**Décision.** `fixtures/signature-vectors.json` contient sept triplets
+`(secret, corps, horodatage) → signature`, couvrant le corps vide, l'UTF-8 hors ASCII,
+un corps de 4 Ko, des guillemets et des sauts de ligne dans le secret. **Les deux
+suites de tests les vérifient.** Si les deux passent, les deux implémentations
+concordent — ce qu'aucun test purement local ne peut établir.
+
+---
+
+## 2026-09-17 — L'idempotence est indexée par `(checksum, modèle)`
+
+**Décision.** Le cache de résultats est indexé par le couple, pas par le seul
+checksum.
+
+**Pourquoi.** Le même fichier séparé en six stems n'est pas le même résultat qu'en
+quatre. Indexer sur le seul checksum rendrait un résultat à quatre stems à une demande
+qui en attendait six.
+
+**Comportement en cas de doublon.** Le webhook de succès est **rejoué à l'identique**
+plutôt que d'être remplacé par une réponse « déjà fait ». Le BFF reçoit exactement ce
+qu'il aurait reçu d'un vrai traitement : un seul chemin de code à écrire de son côté.
+
+---
+
+## 2026-09-17 — Le webhook est ré-horodaté à chaque tentative
+
+**Décision.** Le corps est signé à neuf avant chaque envoi, pas une fois pour toutes.
+
+**Pourquoi.** Les reessais s'étalent sur une trentaine de secondes. Avec une fenêtre
+de tolérance de 300 s ce n'est pas encore un problème, mais une politique de reessais
+plus longue ferait expirer l'horodatage — et le BFF rejetterait une livraison
+parfaitement légitime. Le coût est un HMAC de plus par tentative.
+
+**Ce qui n'est pas réessayé.** Une réponse 4xx de validation : le corps ne deviendra
+pas valide en le renvoyant. Seuls 5xx, 408, 425 et 429 déclenchent une nouvelle
+tentative.
+
+---
+
+## 2026-09-17 — Un redémarrage du worker remet le job en file, sans attendre le délai d'expiration
+
+**Décision.** `retry_jobs = True` avec le gestionnaire de signal par défaut d'ARQ.
+
+**Comment cela fonctionne.** Sur `SIGTERM`, ARQ annule les tâches en cours ; une
+`CancelledError` avec `retry_jobs` remet immédiatement le job en file. **Vérifié par
+exécution** : un job interrompu à 10 % a repris à l'essai 2 sur un worker neuf et
+s'est terminé normalement.
+
+**L'alternative écartée.** `job_completion_wait=True` fait attendre la fin des jobs
+avant de s'arrêter. Pour un worker GPU en _scale-to-zero_, cela bloquerait l'arrêt
+jusqu'à dix minutes. Remettre en file est plus rapide et plus sûr.
+
+**Limite connue.** Le pipeline tourne dans un thread d'exécuteur : annuler la tâche
+asyncio ne l'interrompt pas. Le thread meurt avec le processus, ce qui est le cas à
+l'arrêt — mais un `SIGKILL` laisserait le job invisible jusqu'à l'expiration de sa clé
+« en cours », soit `job_timeout + 10 s`.
+
+---
+
+## 2026-09-17 — Les erreurs de validation ne renvoient pas l'entrée reçue
+
+**Décision.** `error.errors(include_url=False, include_input=False,
+include_context=False)`, remis à la forme `{champ: [messages]}` des contrats.
+
+**Deux raisons.** Le contexte pydantic porte des objets Python non sérialisables — le
+service renvoyait une 500 en tentant de décrire une 400. Et renvoyer l'entrée ferait
+du service un écho pour qui le sonde.
+
+---
+
+## 2026-09-17 — `create_app()` plutôt qu'une application globale
+
+**Décision.** L'application FastAPI est construite par une fabrique qui accepte les
+trois dépendances externes (configuration, Redis, file). L'instance servie par uvicorn
+n'est qu'un appel par défaut de cette fabrique.
+
+**Pourquoi.** Cela permet de tester la surface HTTP contre un Redis en mémoire et une
+file factice, **sans rien simuler du code testé lui-même** — seules les frontières
+externes sont substituées. La fabrique ne ferme que ce qu'elle a ouvert : une
+dépendance injectée appartient à l'appelant.
