@@ -21,7 +21,7 @@
     },
     "test:e2e": {
       "dependsOn": ["^build"],
-      "outputs": ["playwright-report/**"]
+      "outputs": []
     },
     "dev": {
       "cache": false,

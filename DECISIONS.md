@@ -173,3 +173,61 @@ par inférence plutôt que déclarés à la main.
 
 **Pourquoi.** Un type TypeScript ne valide rien à l'exécution. Partir du schéma
 garantit que la validation et le type ne peuvent pas diverger.
+
+---
+
+## 2026-09-17 — Le lecteur est exposé à React comme un store externe
+
+**Décision.** `MultitrackPlayer` est branché sur React via `useSyncExternalStore`
+(`app/lib/player-store.ts`), et non par une cascade de `useState` alimentée dans un
+effet.
+
+**Pourquoi.** C'est ce qu'il est réellement : un objet impératif dont l'état change en
+dehors de React, au rythme de l'horloge audio. Le linter `react-hooks@7` a d'ailleurs
+rejeté la première version — `setState` synchrone dans un effet, accès aux refs
+pendant le rendu — et le signal était juste. Bénéfice supplémentaire : le rendu
+serveur devient trivial, puisque Web Audio n'existe pas côté serveur et que
+l'instantané y est constant.
+
+**Conséquence.** Le store compare les sources par clé et ignore les appels redondants.
+Un appelant qui passe un tableau recréé à chaque rendu ne détruit donc plus
+l'AudioContext à chaque fois.
+
+---
+
+## 2026-09-17 — Curseur et chronomètre écrivent directement dans le DOM
+
+**Décision.** La position de lecture n'entre pas dans l'état React. `Playhead` et
+`TimeDisplay` s'abonnent à `observePosition()` et écrivent directement dans leur nœud,
+le curseur via `transform`.
+
+**Pourquoi.** À 60 Hz, un `setState` par frame ferait re-rendre tout le lecteur pour
+déplacer un trait d'un pixel. `transform` ne déclenche que de la composition, pas de
+mise en page.
+
+**Ce qui ne change pas.** La _valeur_ vient toujours de `AudioContext.currentTime` —
+`requestAnimationFrame` cadence l'affichage, il ne mesure pas le temps.
+
+---
+
+## 2026-09-17 — Les peaks ne resteront pas en ligne dans la charge SSR
+
+**Constat.** La page de démonstration sérialise les peaks (512 points/seconde) dans
+les données du _loader_ : 175 Ko de HTML pour 12 secondes d'audio. Extrapolé à un
+morceau de 4 minutes et 6 stems, cela dépasserait plusieurs mégaoctets par page.
+
+**Décision.** Acceptable pour la page de vérification de la phase 1. À partir de la
+phase 2, où le format de sortie du pipeline est arrêté, les peaks seront produits et
+servis comme un **fichier binaire séparé** (un octet par point), récupéré par le
+client et mis en cache par le CDN — et non sérialisés dans le HTML.
+
+---
+
+## 2026-09-17 — Signature GPG désactivée pour ce dépôt
+
+**Contexte.** La configuration git globale du poste signe les commits avec GPG, dont
+la clé attend une passphrase interactive : `gpg: signing failed: Timeout`.
+
+**Décision.** `commit.gpgsign=false` **dans ce dépôt uniquement**. La configuration
+globale n'a pas été modifiée. À réactiver si les commits signés sont attendus sur ce
+projet.

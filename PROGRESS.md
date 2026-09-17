@@ -39,3 +39,27 @@
   topologie validée par `scripts/dev-services.sh`. À exécuter une fois sur une
   machine équipée avant la phase 9.
 - L'exécution réelle de GitHub Actions (nécessite un _push_ vers un dépôt distant).
+
+---
+
+## Phase 1 — Moteur audio multipiste (2026-09-17)
+
+**Definition of Done — vérifiée par exécution**
+
+| Critère                           | Vérification                                                                  |
+| --------------------------------- | ----------------------------------------------------------------------------- |
+| 4 stems de test dans le dépôt     | ✅ `apps/web/public/dev-stems/`, synthétisés par `scripts/make-test-stems.py` |
+| Lecture parfaitement synchrone    | ✅ 77 tests unitaires + 26 tests navigateur                                   |
+| Dérive nulle après un seek        | ✅ `start()` instrumenté : `when` et `offset` uniques après chaque seek       |
+| Tests unitaires du planificateur  | ✅ `scheduler.test.ts` et `transport-clock.test.ts`                           |
+| Une piste par stem + forme d'onde | ✅ peaks pré-calculés, aucun décodage complet côté client                     |
+| Barre de transport                | ✅ lecture/pause, retour au début, seek au pointeur                           |
+| Raccourcis clavier                | ✅ espace, flèches, M, S, Maj, Échap, Origine                                 |
+| Mobile 390 px                     | ✅ `scrollWidth == clientWidth`, suite E2E verte sur ce format                |
+
+**Non vérifié**
+
+- L'écoute directe : l'environnement d'exécution n'a pas de sortie audio. Elle est
+  remplacée par l'instrumentation de `AudioBufferSourceNode.start()` dans Chromium,
+  qui constate l'égalité **exacte** des instants de démarrage — un critère plus strict
+  qu'une absence de décalage perceptible.
