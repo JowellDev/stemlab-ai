@@ -130,6 +130,59 @@ pnpm services logs postgres
 
 ---
 
+## Service de jobs
+
+Le BFF dépose un job sur le service ML, qui le met en file et rend son résultat par
+un **webhook signé**. Le worker ne touche jamais la base de données.
+
+| Route               | Rôle                                         |
+| ------------------- | -------------------------------------------- |
+| `POST /jobs`        | dépose un job — signature HMAC obligatoire   |
+| `GET /jobs/{id}`    | progression, étape en cours, erreur          |
+| `GET /dead-letters` | jobs définitivement échoués, pour inspection |
+| `GET /health`       | liveness — répond sans charger torch         |
+| `GET /ready`        | readiness — vérifie Redis                    |
+
+**Signature.** La chaîne signée est `${timestamp}.${corps_brut}`, en HMAC-SHA256
+hexadécimal, transportée dans `x-stemlab-signature` avec `x-stemlab-timestamp`. La
+fenêtre de tolérance est de 300 s. Les deux implémentations — TypeScript et Python —
+sont vérifiées contre des vecteurs partagés (`fixtures/signature-vectors.json`).
+
+**Idempotence.** Un fichier déjà traité avec le même modèle ne repasse pas dans le
+pipeline : le webhook de succès est simplement rejoué, à l'identique. La clé est
+`(checksum, modèle)` — le même fichier séparé en six stems n'est pas le même résultat
+qu'en quatre.
+
+**Reprise.** Trois essais au total, avec recul exponentiel (5 s puis 20 s). Un
+redémarrage du worker en cours de traitement remet le job en file : rien n'est perdu.
+Au-delà des essais, le job part en file de rebut plutôt que de disparaître.
+
+### Essayer en local
+
+```bash
+# 1. les services, puis l'API et le worker
+pnpm services
+pnpm --filter @stemlab/ml dev        # API sur :8000
+pnpm --filter @stemlab/ml worker     # worker ARQ
+
+# 2. un receveur de webhook qui vérifie la signature
+uv run --project apps/ml python scripts/webhook-receiver.py
+
+# 3. déposer un job signé
+SECRET=dev-only-change-me-hmac-secret
+BODY='{"trackId":"...","sourceKey":"tracks/x/original.mp3","checksum":"<sha256>",
+       "model":"htdemucs","outputPrefix":"tracks/x/stems",
+       "callbackUrl":"http://127.0.0.1:3999/api/internal/jobs/callback"}'
+TS=$(date +%s)
+SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.*= //')
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "content-type: application/json" \
+  -H "x-stemlab-signature: $SIG" -H "x-stemlab-timestamp: $TS" \
+  --data-binary "$BODY"
+```
+
+---
+
 ## Commandes
 
 | Commande          | Effet                                                |
@@ -173,6 +226,10 @@ Ces scripts s'appuient sur les dépendances de développement de la racine ; il 
 **`uv sync` ne résout pas les dépendances.**
 `arq` contraint `redis<6` : ne pas ajouter `redis` en dépendance directe avec une
 borne supérieure plus élevée.
+
+**Le worker refuse de démarrer : `'staticmethod' object has no attribute 'host'`.**
+`WorkerSettings.redis_settings` doit être une _instance_ de `RedisSettings`, pas une
+méthode. Elle est construite au chargement du module.
 
 **Les modèles Demucs se re-téléchargent à chaque exécution.**
 Ils sont mis en cache dans `~/.cache/torch`. Sous Docker, ce chemin est monté sur le

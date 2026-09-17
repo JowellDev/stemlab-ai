@@ -140,23 +140,33 @@ def build_rock(spec: Track) -> Signal:
 
             # Basse : fondamentale a la noire, une quinte sur le dernier temps.
             bass_note = note(root, 0) / 2 if step < 3 else note(root + 7, 0) / 2
-            place(track, at, tone(bass_note, beat * 0.9, (1.0, 0.35, 0.1)) * envelope(
-                int(beat * 0.9 * SAMPLE_RATE), 0.005, 0.22
-            ) * 0.55)
+            place(
+                track,
+                at,
+                tone(bass_note, beat * 0.9, (1.0, 0.35, 0.1))
+                * envelope(int(beat * 0.9 * SAMPLE_RATE), 0.005, 0.22)
+                * 0.55,
+            )
 
             # Guitare rythmique : accord en croches.
             for eighth in (0.0, 0.5):
                 length = beat * 0.45
                 n = int(length * SAMPLE_RATE)
                 strum = sum(tone(freq, length, (1.0, 0.5, 0.25, 0.12)) for freq in voicing)
-                place(track, at + eighth * beat, strum / len(voicing) * envelope(n, 0.004, 0.12) * 0.3)
+                place(
+                    track, at + eighth * beat, strum / len(voicing) * envelope(n, 0.004, 0.12) * 0.3
+                )
 
         # Melodie : une blanche par demi-mesure, sur les notes de l'accord.
         for half in (0, 1):
             freq = note(root + (0 if half == 0 else 7), 2)
             length = beat * 1.8
             n = int(length * SAMPLE_RATE)
-            place(track, bar_start + half * 2 * beat, tone(freq, length, (1.0, 0.2)) * envelope(n, 0.02, 0.6) * 0.3)
+            place(
+                track,
+                bar_start + half * 2 * beat,
+                tone(freq, length, (1.0, 0.2)) * envelope(n, 0.02, 0.6) * 0.3,
+            )
 
     return track
 
@@ -179,7 +189,13 @@ def build_electro(spec: Track) -> Signal:
             place(track, at + beat * 0.5, hat(rng, 0.06, level=0.3))
             # Basse synthetique tenue sous chaque temps.
             n = int(beat * 0.85 * SAMPLE_RATE)
-            place(track, at, tone(note(root, -1), beat * 0.85, (1.0, 0.5, 0.25)) * envelope(n, 0.003, 0.18) * 0.6)
+            place(
+                track,
+                at,
+                tone(note(root, -1), beat * 0.85, (1.0, 0.5, 0.25))
+                * envelope(n, 0.003, 0.18)
+                * 0.6,
+            )
 
         # Arpege de doubles-croches sur les notes de l'accord.
         for step in range(16):
@@ -190,7 +206,9 @@ def build_electro(spec: Track) -> Signal:
             place(
                 track,
                 bar_start + step * beat / 4,
-                tone(note(root + interval, octave), length, (1.0, 0.3)) * envelope(n, 0.002, 0.07) * 0.28,
+                tone(note(root + interval, octave), length, (1.0, 0.3))
+                * envelope(n, 0.002, 0.07)
+                * 0.28,
             )
 
         # Nappe tenue sur toute la mesure.
@@ -229,7 +247,9 @@ def build_ballad(spec: Track) -> Signal:
             # Contrebasse : fondamentale et quinte en alternance.
             bass = note(root if step % 2 == 0 else root + 7, -1)
             n = int(beat * 0.85 * SAMPLE_RATE)
-            place(track, at, tone(bass, beat * 0.85, (1.0, 0.45, 0.2)) * envelope(n, 0.01, 0.45) * 0.5)
+            place(
+                track, at, tone(bass, beat * 0.85, (1.0, 0.45, 0.2)) * envelope(n, 0.01, 0.45) * 0.5
+            )
 
         # Piano : arpege de croches sur les notes de l'accord.
         for step in range(8):
@@ -239,7 +259,9 @@ def build_ballad(spec: Track) -> Signal:
             place(
                 track,
                 bar_start + step * beat / 2,
-                tone(note(root + interval, 1 + step // len(intervals)), length, (1.0, 0.45, 0.2, 0.1))
+                tone(
+                    note(root + interval, 1 + step // len(intervals)), length, (1.0, 0.45, 0.2, 0.1)
+                )
                 * envelope(n, 0.006, 0.4)
                 * 0.3,
             )
@@ -288,9 +310,20 @@ def write(spec: Track, mono: Signal) -> Path:
     if spec.suffix == ".mp3":
         temporary = OUT / f"{spec.name}.tmp.wav"
         sf.write(temporary, stereo.T, SAMPLE_RATE)
-        subprocess.run(  # noqa: S603
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(temporary),  # noqa: S607
-             "-c:a", "libmp3lame", "-b:a", "192k", str(destination)],
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(temporary),
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "192k",
+                str(destination),
+            ],
             check=True,
         )
         temporary.unlink()

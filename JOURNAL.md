@@ -374,3 +374,149 @@ positions dans les bornes de la signature, couverture du morceau.
 
 **Tests** : 106 côté Python (dont 17 d'intégration Essentia), 42 côté contrats.
 `ruff` et `mypy --strict` propres.
+
+---
+
+# Phase 3 — Service de jobs
+
+**2026-09-17** · branche `phase/03-jobs`
+
+## 3.1 — La frontière qui structure tout
+
+Une seule règle de conception commande cette phase :
+
+> Le worker ne touche **jamais** la base de données. Il lit l'original sur S3, écrit
+> les stems sur S3, et rend son résultat au BFF par un webhook signé.
+
+C'est ce qui permettra, en phase 9, de déplacer le worker sur un GPU serverless sans
+rien changer ailleurs : il n'a besoin ni d'accès réseau privilégié, ni de secret de
+base de données, ni de connaître le schéma. Il a besoin d'un bucket et d'une URL.
+
+## 3.2 — Deux implémentations d'une même signature
+
+La signature HMAC existe désormais en TypeScript **et** en Python. Chacune peut passer
+ses propres tests tout en étant incompatible avec l'autre — un encodage UTF-8
+différent, un espace de sérialisation, et tout le canal interne tombe en silence.
+
+`fixtures/signature-vectors.json` contient sept triplets
+`(secret, corps, horodatage) → signature`, couvrant :
+
+- un corps vide ;
+- de l'UTF-8 hors ASCII (`{"titre":"Été à Paris — été"}`) ;
+- un corps de 4 Ko ;
+- des guillemets et antislashs échappés ;
+- des sauts de ligne dans le secret.
+
+Les deux suites les vérifient. Si les deux passent, les deux implémentations
+concordent — ce qu'aucun test purement local ne peut établir.
+
+## 3.3 — Redis porte trois choses, pas une
+
+Le même module regroupe trois responsabilités, parce qu'elles partagent la convention
+de clés :
+
+| Rôle          | Clé                                    | Durée de vie                                               |
+| ------------- | -------------------------------------- | ---------------------------------------------------------- |
+| Progression   | `stemlab:job:{id}`                     | 24 h — assez pour interroger, trop peu pour servir de base |
+| Idempotence   | `stemlab:checksum:{modèle}:{checksum}` | 30 jours — c'est ce qui évite de repayer du GPU            |
+| File de rebut | `stemlab:dlq`                          | bornée à 1000 entrées                                      |
+
+Le **modèle fait partie de la clé d'idempotence** : le même fichier séparé en six
+stems n'est pas le même résultat qu'en quatre.
+
+En cas de doublon, le webhook de succès est **rejoué à l'identique** plutôt que
+remplacé par une réponse « déjà fait ». Le BFF reçoit exactement ce qu'il aurait reçu
+d'un vrai traitement, et n'a donc qu'un seul chemin de code à écrire.
+
+## 3.4 — Ce qui a résisté
+
+**Le worker refusait de démarrer.** `WorkerSettings.redis_settings` doit être une
+_instance_ de `RedisSettings`, pas une méthode — ARQ lit l'attribut directement.
+Erreur peu lisible : `'staticmethod' object has no attribute 'host'`.
+
+**Une erreur 400 renvoyait une 500.** `ValidationError.errors()` inclut par défaut un
+contexte qui porte l'objet `ValueError` d'origine, non sérialisable en JSON. Le
+service échouait en tentant de décrire l'échec. Les erreurs sont désormais ramenées à
+la forme `{champ: [messages]}` des contrats, sans contexte ni entrée — ce qui évite
+aussi de faire du service un écho pour qui le sonde.
+
+**Les tests ne pouvaient pas partager Redis.** `TestClient` exécute l'application dans
+sa propre boucle d'événements ; un client Redis asynchrone y est lié et ne peut pas
+être réutilisé depuis la boucle du test. La solution n'est pas de partager le client
+mais le **serveur** : `FakeServer` porte les données, chaque boucle a son client. Ce
+qui reproduit d'ailleurs fidèlement la réalité — le worker tourne dans un autre
+processus.
+
+## 3.5 — Vérification de bout en bout
+
+Stack complète lancée : Redis, S3, API, worker ARQ, et un receveur de webhook qui
+vérifie la signature exactement comme le fera le BFF.
+
+**1. Un vrai job, déposé par `curl` signé**
+
+```
+POST /jobs → 202 Accepted
+{"jobId":"dfc27f84-…","status":"queued","deduplicated":false}
+
+  [  2%] normalisation
+  [ 57%] separation
+  [ 78%] encodage
+  [100%] termine
+  [SUCCES] 4 stems | F# minor | 127.96 BPM | 9 accords | 14.92 s
+```
+
+Les quatre stems sont bien dans S3, sous le préfixe demandé.
+
+**2. Idempotence** — même corps reposté :
+
+```
+{"jobId":"68c24ac9-…","status":"succeeded","deduplicated":true}
+```
+
+Le webhook de succès est rejoué à l'identique, et le journal du worker ne montre
+**aucun** nouveau traitement.
+
+**3. Échec** — clé source inexistante :
+
+```
+[ECHEC] not_found : objet introuvable : tracks/inexistant/rien.mp3 (rejouable : False)
+```
+
+Pas de reessai — un objet absent ne réapparaîtra pas — et le job part en file de
+rebut.
+
+**4. Redémarrage du worker en cours de traitement**
+
+Un morceau de 128 s est lancé, puis le worker reçoit `SIGTERM` à 10 % :
+
+```
+22:31:35: shutdown on SIGTERM ◆ 1 jobs complete ◆ 1 ongoing to cancel
+22:31:35:  51.50s ↻ d008120e-…:process_track cancelled, will be run again
+```
+
+Un worker neuf est démarré. Le job **reprend à l'essai 2** et se termine :
+
+```
+running|10|2|separation  →  running|62|2|analyse  →  succeeded|100|2|termine
+[SUCCES] 4 stems | A minor | 120.01 BPM | 80 accords | 53.1 s
+```
+
+Aucune perte. C'est le comportement voulu pour un worker GPU en _scale-to-zero_ :
+remettre en file immédiatement plutôt que bloquer l'arrêt jusqu'à dix minutes.
+
+## 3.6 — Definition of Done
+
+| Critère                           | Résultat                                       |
+| --------------------------------- | ---------------------------------------------- |
+| `POST /jobs`, `GET /jobs/{id}`    | ✅ + `/dead-letters`, `/ready`                 |
+| Progression incrémentale          | ✅ état Redis + webhooks, par pas de 10 points |
+| Reessais avec recul               | ✅ 5 s puis 20 s, trois essais                 |
+| Timeout                           | ✅ 600 s, aligné sur le plafond Modal          |
+| File de rebut                     | ✅ bornée à 1000 entrées                       |
+| Webhook signé HMAC                | ✅ vecteurs partagés entre les deux langages   |
+| Idempotence par checksum          | ✅ clé `(checksum, modèle)`                    |
+| Job de bout en bout depuis `curl` | ✅                                             |
+| Échec simulé remonté              | ✅                                             |
+| Redémarrage sans perte            | ✅                                             |
+
+**Tests** : 205 Python (dont 16 sur la machine à états du worker), 58 contrats.

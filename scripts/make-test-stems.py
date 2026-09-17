@@ -146,9 +146,20 @@ def encode(name: str, samples: np.ndarray) -> dict[str, object]:
     wav = OUT / f"{name}.wav"
     opus = OUT / f"{name}.opus"
     sf.write(wav, samples.astype(np.float32), SAMPLE_RATE)
-    subprocess.run(  # noqa: S603
-        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav),  # noqa: S607
-         "-c:a", "libopus", "-b:a", "96k", str(opus)],
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(wav),
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "96k",
+            str(opus),
+        ],
         check=True,
     )
     wav.unlink()
