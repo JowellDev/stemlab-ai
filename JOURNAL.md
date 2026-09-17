@@ -203,3 +203,174 @@ signés sont attendus sur ce projet.
 **2026-09-17** · branche `phase/01-player` · en cours
 
 _(en cours de rédaction — mis à jour au fil des étapes)_
+
+---
+
+# Phase 2 — Pipeline ML en local
+
+**2026-09-17** · branche `phase/02-pipeline`
+
+## 2.1 — Architecture : ce qui est pur, ce qui ne l'est pas
+
+La contrainte « le code ML est pur et testable, les fonctions de traitement ne font
+pas d'I/O réseau » a piloté le découpage. Deux modules seulement touchent au monde
+extérieur :
+
+| Module          | Rôle                                                           | Pur ?               |
+| --------------- | -------------------------------------------------------------- | ------------------- |
+| `chords.py`     | gabarits, Viterbi, agrégation par temps, arbitrage de tonalité | ✅                  |
+| `beats.py`      | signature rythmique, numérotation des temps, choix de phase    | ✅                  |
+| `waveform.py`   | peaks à 512 points/seconde                                     | ✅                  |
+| `models.py`     | miroir pydantic des contrats Zod                               | ✅                  |
+| `analysis.py`   | Essentia : tonalité, tempo, chromagramme                       | bibliothèque native |
+| `separation.py` | Demucs : séparation                                            | torch               |
+| `io_audio.py`   | ffmpeg : normalisation, encodage Opus                          | processus externes  |
+| `runner.py`     | orchestration                                                  | disque              |
+
+Essentia et Demucs sont importés **paresseusement**. Deux raisons : charger torch
+coûte plusieurs secondes et `/health` doit répondre sans, et surtout cela isole la
+seule dépendance AGPL derrière une frontière nette — remplacer cet étage ne demande
+que de réimplémenter trois fonctions.
+
+## 2.2 — Un allègement de 4 Go
+
+La première installation a téléchargé plus de **4 Go** : les roues PyPI de `torch`
+embarquent les bibliothèques CUDA, dont rien n'est utilisable sans GPU. En épinglant
+`torch` et `torchaudio` sur l'index `download.pytorch.org/whl/cpu`, l'environnement
+descend à **1,2 Go**. Le GPU redevient ce qu'il doit être : une affaire d'image de
+déploiement, pas de verrou de dépôt.
+
+## 2.3 — Le bug qui ne se voyait pas
+
+Le premier passage complet a produit des accords **tous transposés**. La sortie
+restait parfaitement plausible — une suite d'accords cohérente, juste dans la
+mauvaise tonalité.
+
+La cause : la fréquence de référence par défaut du HPCP d'Essentia est 440 Hz, donc
+son bin 0 est un **la**, pas un do. La rotation appliquée avait été _déduite_, et
+elle était fausse.
+
+La correction n'a pas consisté à raisonner mieux, mais à **mesurer** : faire passer
+les douze notes chromatiques dans l'extracteur et relever le bin dominant.
+
+```
+  C   (index  0) -> bin  3        A   (index  9) -> bin  0
+  C#  (index  1) -> bin  4        A#  (index 10) -> bin  1
+  ...                             B   (index 11) -> bin  2
+  décalage constant : +3
+```
+
+Un test rejoue cette mesure pour chacune des douze notes. C'est le type de bug qui
+peut vivre des mois dans un projet : rien ne plante, tout est simplement faux.
+
+## 2.4 — Détection d'accords : trois corrections successives
+
+L'estimateur a été validé d'abord sur du chromagramme **propre** — quatre accords
+tenus, temps exacts — où il rend `Am F C G` avec une confiance de 0,97. Le problème
+n'était donc pas la reconnaissance, mais le lissage.
+
+**Correction 1 — la netteté des émissions.** Les similarités cosinus sont mal
+calibrées comme vraisemblances : l'écart entre un accord juste (1,0) et un accord
+proche mais faux (0,87) ne pèse presque rien en logarithme, et le coût de transition
+écrase tout. Résultat : une suite Am–F devenait un unique **Fmaj7**, qui contient les
+deux. Un exposant (10) appliqué aux scores avant décodage rend les écarts décisifs.
+
+**Correction 2 — décoder par temps, pas par trame.** Le chromagramme est désormais
+agrégé par intervalle entre deux temps, par médiane. La médiane écarte les
+transitoires percussifs, et le coût de transition prend un sens musical — par temps
+plutôt que par tranche de 46 ms. Sur le morceau « électro », le nombre de segments
+parasites a chuté d'un facteur trois.
+
+**Correction 3 — le coût de transition n'est pas une probabilité.** La formulation
+initiale `log((1 - p) / (n_états - 1))` donnait ≈ 6,8 nats par changement, quelles que
+soient les circonstances — assez pour figer la sortie sur un seul accord dès que les
+observations se comptent en dizaines plutôt qu'en milliers. Il est maintenant exprimé
+comme un coût explicite en nats, avec deux valeurs selon le mode de décodage.
+
+## 2.5 — La tonalité, et pourquoi elle était fausse deux fois sur trois
+
+Une tonalité mineure et son relatif majeur partagent **exactement** la même armure.
+Aucun estimateur fondé sur le profil de hauteurs ne peut les séparer — et Essentia
+rendait bien le relatif majeur sur les deux morceaux mineurs.
+
+La distinction se fait par l'usage, pas par le contenu. `refine_key_with_chords()`
+arbitre a posteriori sur deux indices classiques :
+
+1. l'accord de tonique est le plus joué (durée cumulée) ;
+2. une pièce commence et se termine sur sa tonique (premier et dernier accords
+   pondérés ×3).
+
+Ce second indice est décisif : `F#m D A E` se lit aussi bien en fa dièse mineur qu'en
+la majeur — c'est la même suite, et les deux toniques y sont jouées aussi longtemps.
+Seul l'accord de départ tranche.
+
+Tonalités correctes : **3/3**, contre 1/3 avant.
+
+## 2.6 — Résultats mesurés
+
+Trois morceaux synthétisés, dans trois formats, avec vérité terrain connue :
+
+| Morceau        | Format | Tonalité    | Tempo                                   | Accords           |
+| -------------- | ------ | ----------- | --------------------------------------- | ----------------- |
+| rock (16 s)    | WAV    | ✅ A minor  | ✅ 118,32 (attendu 120,0 — écart 1,4 %) | partiel           |
+| électro (15 s) | MP3    | ✅ F# minor | ✅ 127,96 (attendu 128,0)               | ✅ `F#m D A E` ×2 |
+| ballade (19 s) | FLAC   | ✅ D major  | ✅ 76,00 (attendu 76,0)                 | racines correctes |
+
+Sur un extrait plus long (128 s), le tempo du morceau « rock » tombe à **120,01 BPM**
+exact : l'écart de 1,4 % était un artefact d'échantillon court.
+
+**Accords.** Perfection sur « électro », racines largement correctes sur « ballade »,
+bruité sur « rock ». Le réglage s'est arrêté là volontairement : Demucs est entraîné
+sur de la musique réelle et répartit du matériel synthétique de façon peu
+représentative. Continuer à ajuster contre ces fichiers serait du sur-apprentissage
+sur du faux audio.
+
+## 2.7 — Temps de traitement
+
+Mesures sur 16 cœurs CPU (aucun GPU sur ce poste) :
+
+| Entrée                 | Durée   | Traitement | Ratio                 |
+| ---------------------- | ------- | ---------- | --------------------- |
+| électro                | 15,0 s  | 8,8 s      | **0,58 ×** temps réel |
+| rock                   | 16,0 s  | 9,6 s      | **0,60 ×**            |
+| ballade                | 18,9 s  | 11,0 s     | **0,58 ×**            |
+| rock ×8                | 128,0 s | 47,9 s     | **0,37 ×**            |
+| ballade, `htdemucs_6s` | 18,9 s  | 19,4 s     | **1,02 ×**            |
+
+Deux lectures :
+
+- Le ratio **s'améliore** avec la durée (0,58 → 0,37) : les coûts fixes — chargement
+  du modèle, mise en route — s'amortissent.
+- Le modèle 6 stems coûte environ **1,7 ×** le modèle 4 stems.
+
+**Le temps GPU n'a pas pu être mesuré** : ce poste n'a pas de GPU. Reporté à la phase
+9, où le worker Modal (L4) fournira la mesure dans les conditions de production.
+
+## 2.8 — Validation croisée des contrats
+
+Le pipeline sérialise avec pydantic, le BFF validera avec Zod. Rien ne garantit que
+les deux décrivent la même chose — sinon un test qui fait passer une vraie sortie de
+l'un dans l'autre.
+
+Trois sorties réelles (peaks tronqués à 64 points) sont versionnées dans
+`fixtures/analysis/` et validées par `packages/contracts/test/pipeline-output.test.ts`
+contre le schéma `PipelineResult`. Le test vérifie aussi des invariants que le schéma
+seul ne couvre pas : accords ordonnés et contigus, grille de temps croissante,
+positions dans les bornes de la signature, couverture du morceau.
+
+## 2.9 — Definition of Done
+
+| Critère                                  | Résultat                                            |
+| ---------------------------------------- | --------------------------------------------------- |
+| `uv run python -m ml.pipeline <fichier>` | ✅ CLI complète avec progression et résumé          |
+| Stems + `analysis.json` valides          | ✅ validés par Zod depuis le côté TypeScript        |
+| Sur trois morceaux de styles différents  | ✅ rock / électro / ballade, en WAV / MP3 / FLAC    |
+| Normalisation ffmpeg (44,1 kHz)          | ✅ testée depuis WAV, MP3 et mono                   |
+| Stems en Opus 96 kb/s                    | ✅ `--keep-wav` en option                           |
+| Accords sur `bass + other` remixés       | ✅ agrégés par temps, lissés, alignés sur la grille |
+| Peaks à 512 points/seconde dans le JSON  | ✅ mix et chaque stem                               |
+| Durée mesurée et consignée (CPU)         | ✅ 0,37 à 0,60 × temps réel selon la durée          |
+| Durée mesurée et consignée (GPU)         | ❌ **aucun GPU sur ce poste** — reporté en phase 9  |
+
+**Tests** : 106 côté Python (dont 17 d'intégration Essentia), 42 côté contrats.
+`ruff` et `mypy --strict` propres.

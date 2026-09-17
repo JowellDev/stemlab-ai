@@ -216,10 +216,14 @@ mise en page.
 les données du _loader_ : 175 Ko de HTML pour 12 secondes d'audio. Extrapolé à un
 morceau de 4 minutes et 6 stems, cela dépasserait plusieurs mégaoctets par page.
 
-**Décision.** Acceptable pour la page de vérification de la phase 1. À partir de la
-phase 2, où le format de sortie du pipeline est arrêté, les peaks seront produits et
-servis comme un **fichier binaire séparé** (un octet par point), récupéré par le
-client et mis en cache par le CDN — et non sérialisés dans le HTML.
+**Décision.** Acceptable pour la page de vérification de la phase 1.
+
+_Précision apportée en phase 2_ : la spécification demande explicitement que les
+peaks figurent dans le JSON produit par le pipeline, et c'est bien le cas. Le
+problème ne concerne donc pas la sortie du pipeline mais la **couche de service** :
+à partir de la phase 4, le BFF ne sérialisera pas les peaks dans la charge SSR ; il
+les exposera comme une ressource binaire séparée (un octet par point), récupérée par
+le client et mise en cache par le CDN.
 
 ---
 
@@ -231,3 +235,125 @@ la clé attend une passphrase interactive : `gpg: signing failed: Timeout`.
 **Décision.** `commit.gpgsign=false` **dans ce dépôt uniquement**. La configuration
 globale n'a pas été modifiée. À réactiver si les commits signés sont attendus sur ce
 projet.
+
+---
+
+## 2026-09-17 — Le verrou Python cible le CPU ; le GPU est l'affaire de Modal
+
+**Constat.** Les roues PyPI de `torch` embarquent les bibliothèques CUDA : la
+première installation a téléchargé plus de 4 Go dont rien n'était utilisable sur une
+machine sans GPU.
+
+**Décision.** `apps/ml/pyproject.toml` épingle `torch` et `torchaudio` sur l'index
+`https://download.pytorch.org/whl/cpu`. L'environnement complet descend à **1,2 Go**.
+L'image du worker GPU, construite par Modal (phase 9), installera la variante CUDA de
+son côté.
+
+**Pourquoi c'est le bon découpage.** Le verrou du dépôt décrit ce qui tourne en
+développement et en CI, c'est-à-dire du CPU. Le GPU n'apparaît que dans un artefact
+de déploiement, où il est effectivement disponible.
+
+---
+
+## 2026-09-17 — Le bin 0 du HPCP d'Essentia est un _la_, pas un _do_
+
+**Contexte.** La fréquence de référence par défaut du HPCP est 440 Hz. Le premier bin
+du chromagramme correspond donc à un la, alors que tout le reste du système raisonne
+en do. La documentation ne le dit pas sans ambiguïté.
+
+**Ce qui s'est passé.** La première version appliquait une rotation déduite du
+raisonnement, et elle était fausse : **tous** les accords sortaient transposés, sans
+qu'aucun test ne le détecte. Le symptôme est silencieux — la sortie reste plausible.
+
+**Décision.** La valeur a été **mesurée** en faisant passer les douze notes
+chromatiques dans l'extracteur, et le test
+`test_le_chromagramme_est_aligne_sur_do` la revérifie pour chacune des douze. La
+constante `HPCP_ROLL_TO_C` porte la mesure, pas le raisonnement.
+
+**Leçon retenue et appliquée ailleurs.** Quand une convention d'une bibliothèque
+externe conditionne toute une chaîne, on la mesure et on épingle la mesure par un
+test — on ne la déduit pas.
+
+---
+
+## 2026-09-17 — La détection d'accords décode par temps, pas par trame
+
+**Décision.** Le chromagramme est agrégé **par intervalle entre deux temps** (médiane)
+avant le décodage de Viterbi, au lieu d'être décodé trame par trame.
+
+**Pourquoi.** Deux bénéfices, tous deux vérifiés sur les morceaux de test :
+
+1. La médiane écarte les transitoires percussifs, qui ne durent qu'une trame ou deux
+   et ne portent aucune hauteur.
+2. Le coût de transition prend enfin un sens musical : il s'exprime par temps, et non
+   par tranche de 46 ms où il ne voulait rien dire.
+
+C'est la pratique établie en reconnaissance d'accords, et le passage a fait tomber le
+nombre de segments parasites d'un facteur trois sur le morceau de test « électro ».
+
+### Deux réglages qui ont demandé une correction
+
+**Le coût de transition n'est pas une probabilité normalisée.** La première version
+utilisait `log((1 - p) / (n_états - 1))`, soit ≈ 6,8 nats par changement quel que
+soit le contexte — assez pour figer la sortie sur un unique accord dès que les
+observations sont peu nombreuses. Il est désormais exprimé comme un **coût explicite
+en nats**, avec deux valeurs : 2,5 en décodage synchrone aux temps, 12 en repli trame
+par trame. Une observation ne représente pas la même chose dans les deux modes.
+
+**Les similarités cosinus sont mal calibrées comme vraisemblances.** L'écart entre un
+accord juste (1,0) et un accord proche mais faux (0,87) ne pèse presque rien en
+logarithme. Sans correction, le lissage fusionnait les accords partageant des notes :
+une suite Am–F devenait un unique Fmaj7. Un exposant (`DEFAULT_SHARPNESS = 10`) est
+appliqué aux scores avant le décodage.
+
+---
+
+## 2026-09-17 — Bande d'analyse resserrée à 55–2000 Hz pour le chromagramme
+
+**Décision.** Les pics spectraux alimentant le HPCP sont limités à 55 Hz–2 kHz, au
+lieu de 40 Hz–5 kHz.
+
+**Pourquoi.** Le fondamental d'une grosse caisse balaie typiquement 40 à 130 Hz. Une
+descente en fréquence n'a pas de hauteur définie : elle étale son énergie sur les
+douze bandes et brouille la détection. 55 Hz (la1) reste sous la plus basse note
+jouable par une basse à quatre cordes. Au-delà de 2 kHz, il n'y a plus que des
+harmoniques, que le HPCP replie déjà par son paramètre `harmonics`.
+
+---
+
+## 2026-09-17 — La tonalité est arbitrée par les accords détectés
+
+**Problème.** Une tonalité mineure et son relatif majeur ont exactement la même
+armure, donc le même profil de hauteurs. Aucun estimateur fondé sur le profil ne peut
+les distinguer. Sur les trois morceaux de test, Essentia a rendu le relatif majeur
+dans les deux cas mineurs.
+
+**Décision.** `refine_key_with_chords()` tranche a posteriori à partir des accords
+détectés, sur deux indices musicalement établis :
+
+1. **L'accord de tonique est le plus joué** — durée cumulée.
+2. **Une pièce commence et se termine sur sa tonique** — le premier et le dernier
+   accord pèsent trois fois plus.
+
+En cas d'égalité, la réponse de l'estimateur est conservée : il n'y a pas de raison
+de la contredire sans marge franche.
+
+**Résultat mesuré.** 3 tonalités correctes sur 3, contre 1 sur 3 avant.
+
+---
+
+## 2026-09-17 — Les morceaux de test sont regénérés, pas versionnés
+
+**Décision.** `scripts/make-test-tracks.py` synthétise trois morceaux (rock, électro,
+ballade) dans trois formats (WAV, MP3, FLAC). Les fichiers audio ne sont **pas**
+committés ; seules les analyses tronquées le sont, comme fixtures de contrat.
+
+**Pourquoi.** Les générateurs sont à graine fixe : la sortie est identique d'une
+exécution à l'autre, et 4 Mo d'audio n'ont rien à faire dans l'historique git. Tout
+étant synthétisé, il n'y a par ailleurs aucun enjeu de droits — et la vérité terrain
+(tonalité, tempo, grille d'accords) est connue exactement, ce qui permet de juger la
+sortie autrement qu'à l'oreille.
+
+**Limite assumée.** Demucs est entraîné sur de la musique réelle. Sur du matériel
+synthétique, il répartit le contenu entre les stems de façon peu représentative. Ces
+morceaux valident **l'enchaînement du pipeline**, pas la qualité de la séparation.

@@ -35,6 +35,11 @@ blob-report/
 # ml scratch output
 apps/ml/out/
 apps/ml/.models/
+out/
+
+# Morceaux de test : regeneres a l'identique par scripts/make-test-tracks.py
+# (generateurs a graine fixe). Seules les analyses tronquees sont versionnees.
+fixtures/tracks/
 
 # os
 .DS_Store
