@@ -1,0 +1,46 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build artifacts
+build/
+dist/
+.react-router/
+.turbo/
+*.tsbuildinfo
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# test output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# local dev services (userspace postgres/redis/minio)
+.devservices/
+
+# ml scratch output
+apps/ml/out/
+apps/ml/.models/
+
+# os
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

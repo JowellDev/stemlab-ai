@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+
+  /* Palette STEMLAB : fond sombre studio, accent cyan. */
+  --color-surface-0: oklch(0.16 0.014 264);
+  --color-surface-1: oklch(0.21 0.016 264);
+  --color-surface-2: oklch(0.26 0.018 264);
+  --color-surface-3: oklch(0.32 0.02 264);
+  --color-accent: oklch(0.78 0.14 195);
+  --color-accent-strong: oklch(0.68 0.16 195);
+
+  /* Une couleur par type de stem : reutilisee par les formes d'onde. */
+  --color-stem-vocals: oklch(0.72 0.17 25);
+  --color-stem-drums: oklch(0.78 0.16 75);
+  --color-stem-bass: oklch(0.7 0.16 285);
+  --color-stem-guitar: oklch(0.75 0.16 145);
+  --color-stem-piano: oklch(0.76 0.14 330);
+  --color-stem-other: oklch(0.72 0.05 240);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-surface-0 text-neutral-100 antialiased;
+  }
+
+  /* Focus visible partout : exigence d'accessibilite de la phase 8. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}

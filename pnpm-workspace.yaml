@@ -1,0 +1,19 @@
+packages:
+  - apps/*
+  - packages/*
+
+strictPeerDependencies: false
+autoInstallPeers: true
+
+# pnpm 11 exige une decision explicite par paquet ayant un script d'installation.
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@tailwindcss/oxide': true
+  esbuild: true
+  prisma: true
+  sharp: true
+
+# lucide-react 1.x est plus recent que la fenetre minimumReleaseAge par defaut.
+minimumReleaseAgeExclude:
+  - lucide-react

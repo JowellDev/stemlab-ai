@@ -1,0 +1,70 @@
+[project]
+name = "stemlab-ml"
+version = "0.1.0"
+description = "STEMLAB — service de separation de sources et d'analyse musicale"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "fastapi>=0.121.0",
+    "uvicorn[standard]>=0.40.0",
+    "pydantic>=2.12.0",
+    "pydantic-settings>=2.12.0",
+    "arq>=0.27.0",
+    "httpx>=0.28.1",
+    "boto3>=1.42.0",
+    "structlog>=25.5.0",
+    "numpy>=1.26,<2.0",
+    "soundfile>=0.13.1",
+]
+
+[project.optional-dependencies]
+# Dependances lourdes (torch, demucs, essentia) : isolees pour que la CI et les
+# tests unitaires du service n'aient pas a les installer.
+ml = [
+    "torch>=2.5.0",
+    "torchaudio>=2.5.0",
+    "demucs>=4.0.1",
+    "essentia>=2.1b6.dev1110",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.14.0",
+    "mypy>=1.18.0",
+    "types-boto3>=1.42.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "ASYNC", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["demucs.*", "essentia.*", "torch.*", "torchaudio.*", "soundfile.*", "arq.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"

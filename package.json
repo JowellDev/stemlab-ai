@@ -1,0 +1,37 @@
+{
+  "name": "stemlab",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
+    "services": "bash scripts/dev-services.sh",
+    "db:migrate": "pnpm --filter @stemlab/web exec prisma migrate dev",
+    "db:generate": "pnpm --filter @stemlab/web exec prisma generate",
+    "db:studio": "pnpm --filter @stemlab/web exec prisma studio"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1134.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "pg": "^8.23.0",
+    "prettier": "^3.9.7",
+    "turbo": "^2.10.13",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0"
+  }
+}

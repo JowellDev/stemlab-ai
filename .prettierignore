@@ -1,0 +1,11 @@
+pnpm-lock.yaml
+uv.lock
+.turbo
+build
+dist
+.react-router
+node_modules
+apps/web/app/generated
+coverage
+playwright-report
+.devservices
