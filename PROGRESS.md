@@ -63,3 +63,29 @@
   remplacée par l'instrumentation de `AudioBufferSourceNode.start()` dans Chromium,
   qui constate l'égalité **exacte** des instants de démarrage — un critère plus strict
   qu'une absence de décalage perceptible.
+
+---
+
+## Phase 2 — Pipeline ML en local (2026-09-17)
+
+**Definition of Done — vérifiée par exécution**
+
+| Critère                                  | Vérification                                             |
+| ---------------------------------------- | -------------------------------------------------------- |
+| `uv run python -m ml.pipeline <fichier>` | ✅ produit stems + `analysis.json`                       |
+| Sortie valide sur trois styles           | ✅ rock (WAV), électro (MP3), ballade (FLAC)             |
+| `analysis.json` conforme au contrat      | ✅ validé par le schéma Zod depuis TypeScript            |
+| Normalisation ffmpeg 44,1 kHz            | ✅ testée depuis WAV, MP3, mono et stéréo                |
+| Stems encodés en Opus 96 kb/s            | ✅ WAV conservable via `--keep-wav`                      |
+| Accords sur `bass + other` remixés       | ✅ lissés temporellement, alignés sur la grille de temps |
+| Peaks 512 points/seconde dans le JSON    | ✅ pour le mix et pour chaque stem                       |
+| Durée mesurée et consignée — CPU         | ✅ 0,37 à 0,60 × temps réel (16 cœurs)                   |
+| Modèle 6 stems                           | ✅ `htdemucs_6s` vérifié : guitare et piano séparés      |
+
+**Non vérifié**
+
+- **Temps de traitement GPU** : ce poste n'a pas de GPU. La mesure est reportée à la
+  phase 9, où le worker Modal (L4) la fournira dans les conditions de production.
+- **Qualité de séparation sur de la musique réelle** : les morceaux de test sont
+  synthétisés, et Demucs est entraîné sur de l'audio réel. Ces fichiers valident
+  l'enchaînement du pipeline, pas la qualité de la séparation.

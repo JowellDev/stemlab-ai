@@ -26,6 +26,20 @@ ml = [
     "essentia>=2.1b6.dev1110",
 ]
 
+[tool.uv]
+# Le verrou du depot cible le CPU : c'est ce qui tourne en developpement et en CI.
+# Les roues PyPI de torch embarquent les bibliotheques CUDA, soit environ 4 Go
+# inutiles ici. Le worker GPU est construit par Modal (infra/modal/), qui installe
+# la variante CUDA dans sa propre image.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchaudio = [{ index = "pytorch-cpu" }]
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.0",

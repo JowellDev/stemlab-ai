@@ -85,7 +85,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/ml/uv.lock
 
-      - run: uv sync --frozen
+      # L'extra `ml` (torch CPU, demucs, essentia) est installe : sans lui, les
+      # tests d'integration — dont la verification de l'alignement du chromagramme —
+      # seraient ignores, et c'est precisement le genre de regression silencieuse
+      # qu'on veut attraper.
+      - run: uv sync --frozen --extra ml
 
       - run: uv run ruff check .
 
