@@ -53,7 +53,7 @@ export function MultitrackPlayerView({ title, subtitle, stems }: MultitrackPlaye
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h2 className="text-xl font-semibold">{title}</h2>
-          {subtitle ? <p className="text-sm text-neutral-400">{subtitle}</p> : null}
+          {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
         </div>
         <StatusBadge
           state={transport}
@@ -120,7 +120,10 @@ function StatusBadge({ state, loaded, total }: { state: string; loaded: number; 
               : 'Pret'
 
   return (
-    <p aria-live="polite" className="font-mono text-xs uppercase tracking-widest text-neutral-500">
+    <p
+      aria-live="polite"
+      className="font-mono text-xs uppercase tracking-widest text-muted-foreground"
+    >
       {text}
     </p>
   )
@@ -138,17 +141,17 @@ const SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
 
 function ShortcutLegend({ disabled }: { disabled: boolean }) {
   return (
-    <details className="rounded-lg border border-surface-2 bg-surface-1 p-3 text-sm">
-      <summary className="cursor-pointer text-neutral-400">Raccourcis clavier</summary>
+    <details className="rounded-lg border border-border bg-card p-3 text-sm">
+      <summary className="cursor-pointer text-muted-foreground">Raccourcis clavier</summary>
       <dl className={`mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 ${disabled ? 'opacity-50' : ''}`}>
         {SHORTCUTS.map(([keys, description]) => (
           <div key={keys} className="flex items-baseline justify-between gap-3">
             <dt>
-              <kbd className="rounded border border-surface-3 bg-surface-2 px-1.5 py-0.5 font-mono text-xs">
+              <kbd className="rounded border border-input bg-muted px-1.5 py-0.5 font-mono text-xs">
                 {keys}
               </kbd>
             </dt>
-            <dd className="text-neutral-400">{description}</dd>
+            <dd className="text-muted-foreground">{description}</dd>
           </div>
         ))}
       </dl>

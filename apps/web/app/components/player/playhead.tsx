@@ -1,6 +1,6 @@
+import { cn } from '@stemlab/ui'
 import { type MultitrackPlayer, observePosition } from '@stemlab/audio-engine'
 import { useEffect, useRef } from 'react'
-import { cn } from '~/lib/cn'
 
 interface PlayheadProps {
   player: MultitrackPlayer | null
@@ -47,7 +47,7 @@ export function Playhead({ player, duration, className }: PlayheadProps) {
       ref={ref}
       aria-hidden
       className={cn(
-        'pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-accent shadow-[0_0_8px_var(--color-accent)]',
+        'pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-brand shadow-[0_0_8px_var(--color-brand)]',
         className,
       )}
     />

@@ -30,9 +30,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Prisma generate
-        run: pnpm --filter @stemlab/web exec prisma generate
-        continue-on-error: true
+      # Le client Prisma est du code genere, non versionne : sans cette etape,
+      # le typecheck echouerait sur des imports introuvables.
+      - name: Generer le client Prisma
+        run: pnpm --filter @stemlab/database generate
 
       - run: pnpm format:check
 
@@ -58,6 +59,8 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @stemlab/database generate
 
       - name: Installer le navigateur Playwright
         run: pnpm --filter @stemlab/web exec playwright install --with-deps chromium
@@ -89,7 +92,7 @@ jobs:
       # tests d'integration — dont la verification de l'alignement du chromagramme —
       # seraient ignores, et c'est precisement le genre de regression silencieuse
       # qu'on veut attraper.
-      - run: uv sync --frozen --extra ml
+      - run: uv sync --frozen
 
       - run: uv run ruff check .
 

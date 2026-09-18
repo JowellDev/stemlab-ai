@@ -447,3 +447,124 @@ n'est qu'un appel par défaut de cette fabrique.
 file factice, **sans rien simuler du code testé lui-même** — seules les frontières
 externes sont substituées. La fabrique ne ferme que ce qu'elle a ouvert : une
 dépendance injectée appartient à l'appelant.
+
+---
+
+## 2026-09-18 — Le SDK AWS v3 rend les URL présignées inutilisables par défaut
+
+**Symptôme.** Tout `PUT` vers une URL présignée était rejeté : `BadDigest` sur
+SeaweedFS, `InvalidDigest ... algorithm Crc32` sur une autre implémentation S3. Les
+requêtes signées classiques passaient, elles, sans problème.
+
+**Cause.** Depuis fin 2024, le SDK JavaScript v3 joint un checksum CRC32 à chaque
+envoi (`requestChecksumCalculation: "WHEN_SUPPORTED"`). Sur une URL présignée, la
+signature exige alors un en-tête que le navigateur ne produit pas, et le stockage
+rejette le dépôt.
+
+**Décision.** `requestChecksumCalculation` et `responseChecksumValidation` sont mis à
+`WHEN_REQUIRED` sur le client S3.
+
+**Ce que ça a coûté.** Le diagnostic est parti dans la mauvaise direction : soupçonner
+l'implémentation S3 locale, télécharger une alternative, la configurer entièrement.
+C'est seulement en réessayant l'implémentation d'origine **avec le correctif** que le
+bug s'est révélé être entièrement de notre côté. La leçon : quand deux implémentations
+indépendantes échouent de la même façon, l'erreur est presque toujours dans le code
+appelant.
+
+---
+
+## 2026-09-18 — L'authentification passe par des actions serveur
+
+**Décision.** L'inscription et la connexion sont traitées par des `action` React
+Router appelant l'API serveur de better-auth, et non par son client navigateur.
+
+**Pourquoi.** Le test de bout en bout échouait de façon intermittente : un clic
+arrivant avant l'hydratation partait en soumission native, sans gestionnaire
+JavaScript pour l'intercepter. Ce n'était pas un défaut du test — c'est exactement ce
+que vit un utilisateur sur une connexion lente. Une action serveur supprime la course
+et fait fonctionner les deux formulaires sans JavaScript.
+
+**Effet de bord bienvenu.** `redirectTo` est validé côté serveur
+(`app/lib/redirect.server.ts`) : seuls les chemins internes sont acceptés, ce qui
+ferme une redirection arbitraire après authentification.
+
+---
+
+## 2026-09-18 — Le statut « en file » est posé avant l'appel au service ML
+
+**Bug trouvé par l'exécution.** Un morceau dédupliqué restait bloqué sur « en file ».
+Le service ML rejoue le webhook de succès **pendant** l'appel de création de job : le
+morceau passait donc à `ready`, puis la transaction qui suivait le remettait à
+`queued`.
+
+**Décision.** Le morceau est marqué « en file » _avant_ l'appel, et par une mise à
+jour conditionnelle (`where: { status: { in: ['uploaded', 'failed'] } }`) : un statut
+plus avancé n'est jamais écrasé. En cas d'échec de l'appel, le morceau est marqué en
+erreur plutôt que laissé en file pour un traitement qui n'arrivera pas.
+
+---
+
+## 2026-09-18 — La déduplication recopie les stems sous le préfixe du demandeur
+
+**Bug lié au précédent.** Le cache d'idempotence rendait des stems stockés sous le
+préfixe du **premier** traitement. Le demandeur recevait des clés qu'il ne possède
+pas, et que la suppression de l'autre morceau ferait disparaître sous ses pieds.
+
+**Décision.** À la déduplication, les stems sont recopiés côté stockage
+(`CopyObject`) sous le préfixe demandé, et les clés réécrites. Une copie serveur reste
+sans commune mesure avec le coût d'une séparation GPU. Si les objets mémorisés ont
+disparu, l'entrée de cache est oubliée et le morceau retraité normalement.
+
+---
+
+## 2026-09-18 — Les dépendances lourdes sont un groupe uv, pas un extra
+
+**Bug trouvé par l'exécution.** Le worker plantait sur `ModuleNotFoundError: torch`
+alors que torch était installé. En cause : `uv run` resynchronise l'environnement à
+chaque appel et **retire** un extra qui n'est pas demandé sur cette ligne de commande.
+
+**Décision.** `torch`, `torchaudio`, `demucs` et `essentia` passent d'un
+`optional-dependencies` à un `dependency-group` listé dans
+`tool.uv.default-groups`. Un groupe par défaut, lui, reste en place quelle que soit
+la commande.
+
+---
+
+## 2026-09-18 — Découpage du monorepo : `packages/database` et `packages/ui`
+
+**Décision.** Deux paquets supplémentaires :
+
+- **`@stemlab/database`** — schéma Prisma, migrations, client généré et fabrique de
+  connexion. Le paquet ne lit pas l'environnement : la chaîne de connexion lui est
+  passée par l'application, qui l'a déjà validée. Une configuration invalide échoue
+  donc au démarrage, pas au premier accès à la base.
+- **`@stemlab/ui`** — composants shadcn/ui et thème. La feuille de style porte à la
+  fois les jetons sémantiques de shadcn et ce qui nous appartient : la couleur de
+  marque et **une couleur par type de stem**. Cette dernière est lue par le canvas des
+  formes d'onde, ce qui garantit que l'interface et le tracé ne peuvent pas diverger.
+
+**Point d'attention.** `accent` est un jeton réservé par shadcn (survol discret). Le
+cyan de STEMLAB a donc été renommé `brand`, et `--primary` pointe dessus pour que les
+boutons soient sur la marque sans détourner un jeton sémantique.
+
+---
+
+## 2026-09-18 — Le flux d'état de la bibliothèque relit la base
+
+**Décision.** Le flux SSE interroge la base toutes les 1,5 s et n'émet que les
+changements, plutôt que de s'appuyer sur un bus d'événements en mémoire.
+
+**Pourquoi.** Le webhook du worker peut atterrir sur une instance et le flux SSE vivre
+sur une autre — ce sera le cas dès le déploiement multi-région de la phase 9. Un bus
+en mémoire laisserait alors l'utilisateur devant une barre de progression figée. Une
+requête indexée coûte beaucoup moins cher qu'un bus distribué, et reste correcte
+quelle que soit la topologie.
+
+---
+
+## 2026-09-18 — Organisation des routes et langue
+
+**Décision.** Les routes sont groupées par nature — `routes/auth/`,
+`routes/dashboard/`, `routes/api/` — et **nommées en anglais**, URL comprises
+(`/login`, `/signup`, `/library`, `/tracks/:id`). Les textes affichés restent en
+français : c'est la langue du produit, pas celle du code.

@@ -2,6 +2,9 @@
 node_modules/
 .pnpm-store/
 
+# client Prisma : code genere, reproduit par `pnpm db:generate`
+packages/database/src/generated/
+
 # build artifacts
 build/
 dist/
@@ -44,6 +47,10 @@ fixtures/tracks/
 # os
 .DS_Store
 Thumbs.db
+
+# fichiers de diagnostic jetables
+*.tmp.mjs
+*.tmp.js
 
 # logs
 *.log

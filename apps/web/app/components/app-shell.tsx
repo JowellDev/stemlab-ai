@@ -1,0 +1,54 @@
+import { cn } from '@stemlab/ui'
+import { AudioLines, LogOut } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Form, Link, NavLink } from 'react-router'
+import type { SessionUser } from '~/lib/session.server'
+
+interface AppShellProps {
+  user: SessionUser
+  children: ReactNode
+}
+
+export function AppShell({ user, children }: AppShellProps) {
+  return (
+    <div className="flex min-h-dvh flex-col">
+      <header className="border-b border-border bg-card">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+          <Link to="/library" className="flex items-center gap-2">
+            <AudioLines aria-hidden className="size-5 text-brand" />
+            <span className="font-mono text-xs uppercase tracking-[0.3em] text-brand">STEMLAB</span>
+          </Link>
+
+          <nav className="flex items-center gap-1 text-sm">
+            <NavLink
+              to="/library"
+              className={({ isActive }) =>
+                cn(
+                  'rounded-md px-3 py-1.5 transition-colors',
+                  isActive
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )
+              }
+            >
+              Ma bibliotheque
+            </NavLink>
+
+            <Form method="post" action="/logout">
+              <button
+                type="submit"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <LogOut aria-hidden className="size-4" />
+                <span className="hidden sm:inline">Se deconnecter</span>
+                <span className="sr-only sm:hidden">Se deconnecter ({user.email})</span>
+              </button>
+            </Form>
+          </nav>
+        </div>
+      </header>
+
+      {children}
+    </div>
+  )
+}
