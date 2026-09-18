@@ -651,3 +651,132 @@ Le test de dérive audio a par ailleurs été rendu tolérant à la charge : il
 échantillonnait pendant une durée fixe, ce qui échouait quand huit workers Playwright
 et un job ML se disputaient la machine. Il attend désormais que la lecture ait franchi
 deux secondes — même propriété vérifiée, sans hypothèse sur la vitesse de la machine.
+
+---
+
+# Phase 5 — Accords, tonalité, tempo
+
+**2026-09-18** · branche `phase/05-chords`
+
+## 5.1 — L'idée qui rend le reste facile
+
+La position rendue par le lecteur est exprimée **dans le temps du morceau**, pas en
+temps réel écoulé :
+
+```
+position = offset + écoulé × vitesse
+```
+
+À 75 %, quatre secondes d'horloge donnent trois secondes de morceau. La position est
+donc toujours dans le référentiel de l'analyse — celui où vivent les accords et les
+temps. Aucun réalignement n'est nécessaire quand le tempo change, et c'est exactement
+ce que vérifie la _Definition of Done_.
+
+## 5.2 — `packages/music`
+
+Transposition, orthographe des hauteurs, recherche de l'élément actif, construction de
+la grille : un paquet pur, sans React ni Web Audio.
+
+| Module         | Rôle                                                       |
+| -------------- | ---------------------------------------------------------- |
+| `spelling.ts`  | dièses ou bémols selon l'armure                            |
+| `transpose.ts` | libellés d'accords et tonalité                             |
+| `lookup.ts`    | recherche dichotomique de l'accord, du temps, de la mesure |
+| `bars.ts`      | grille de mesures et répartition des accords               |
+
+**58 tests**, aucun simulacre.
+
+Deux points méritent d'être notés :
+
+**Rien n'est recalculé depuis l'audio pour transposer.** La fondamentale de chaque
+accord est déjà connue ; il suffit de la décaler. Une transposition est donc
+instantanée et ne peut pas désaligner quoi que ce soit.
+
+**L'orthographe suit l'armure obtenue.** Transposer ré majeur d'un demi-ton donne mi
+bémol majeur : écrire `D#` y serait faux. Un test écrit naïvement a d'ailleurs échoué
+sur ce point — c'est l'application qui avait raison, pas le test.
+
+## 5.3 — La grille était décalée d'une demi-mesure
+
+Le premier rendu à l'écran l'a montré tout de suite : les accords tombaient au milieu
+des cases.
+
+La cause n'était pas dans l'affichage. La phase des temps forts venait de l'énergie
+par temps — et sur un morceau électronique en quatre-à-la-noire, tous les temps ont la
+même énergie. L'heuristique n'avait rien pour trancher, et retombait sur « le premier
+temps détecté est un temps fort », ce qui était faux ici.
+
+**Correction dans le pipeline.** La grille est désormais construite **après** la
+détection d'accords, et la phase retenue est celle qui place le plus de changements
+d'accord sur un temps fort. Une harmonie change presque toujours sur un temps fort ;
+c'est un indice nettement plus fiable que l'énergie, qui reste le repli.
+
+Résultat sur la ballade : premier temps fort à 3,135 s, exactement sur un changement
+d'accord.
+
+## 5.4 — Deux vues, un même lecteur
+
+**Grille** — quatre mesures par ligne, l'accord au centre, la mesure courante mise en
+avant. C'est la vue d'un musicien qui joue.
+
+**Ligne de temps** — largeur proportionnelle à la durée : on lit d'un coup d'œil qu'un
+accord tient quatre temps et le suivant deux.
+
+Le lecteur a dû être **remonté d'un cran** : il appartient maintenant à
+`TrackWorkspace`, que la grille d'accords et les pistes partagent. Elles lisent la
+même horloge, elles ne peuvent donc pas diverger. La partie présentationnelle du
+lecteur a été extraite dans `PlayerControls`, ce qui laisse la page de vérification du
+moteur inchangée.
+
+**Aucune de ces vues ne passe par l'état React pour suivre la lecture.** La recherche
+tourne à chaque frame — c'est une dichotomie, négligeable — mais le rappel n'est
+déclenché que lorsque l'élément actif _change_. Un accord durant plusieurs secondes,
+cela fait une notification pour trois cents frames muettes. Le défilement suit les
+changements d'accord, pas chaque frame : un recentrage continu donnerait un mouvement
+flottant.
+
+## 5.5 — Pilotage de la vitesse
+
+`MultitrackPlayer.setPlaybackRate()` agit sur le `playbackRate` des sources. Cette
+implémentation déplace aussi la hauteur — la phase 6 la remplacera par un AudioWorklet
+SoundTouch qui dissocie les deux, sans changer l'API.
+
+Le point délicat : **l'horloge doit être ré-ancrée** sur la position courante au
+moment du changement. Sans cela, tout le temps déjà écoulé serait réinterprété à la
+nouvelle vitesse et la position ferait un saut. Un test le vérifie explicitement.
+
+## 5.6 — Trois défauts trouvés par l'exécution
+
+**Une revalidation pendant le rendu.** La bibliothèque appelait `revalidate()` dans le
+corps du composant. React le signale : _« Cannot update a component while rendering a
+different component »_. Déplacé dans un effet.
+
+**Les boutons de vue perdaient leur nom sous 640 px.** Leur libellé vit dans un
+`<span class="hidden sm:inline">` : à 390 px, ils n'avaient plus **aucun** nom
+accessible. C'est le test mobile qui l'a révélé.
+
+**Les curseurs n'avaient pas de nom du tout.** Dans un slider Radix, c'est la
+_poignée_ qui porte le rôle `slider`, pas la racine : un `aria-label` posé sur le
+composant n'atteint aucune technologie d'assistance. Le composant partagé expose
+désormais `thumbLabel`.
+
+## 5.7 — Definition of Done
+
+La propriété vérifiée est la même dans tous les cas, et elle est auto-référente :
+**l'accord mis en avant doit contenir la position de lecture dans ses propres
+bornes**. Chaque accord porte son intervalle ; le test n'a donc rien à supposer.
+
+| Critère                              | Vérification                                     |
+| ------------------------------------ | ------------------------------------------------ |
+| Accords synchronisés à la lecture    | ✅ dès le démarrage                              |
+| Alignement après seek                | ✅ quatre positions successives                  |
+| Alignement après changement de tempo | ✅ à 75 % puis 125 %                             |
+| Alignement après transposition       | ✅ bornes inchangées, seul le libellé change     |
+| Grille de mesures                    | ✅ calée sur les changements d'accord            |
+| Tonalité et BPM en en-tête           | ✅ valeurs **entendues**, pas analysées          |
+| Transposition des libellés           | ✅ décalage uniforme, orthographe selon l'armure |
+| Défilement automatique               | ✅ sur changement d'accord ou de mesure          |
+| Vue grille et vue ligne de temps     | ✅                                               |
+| Mobile 390 px                        | ✅ suite complète verte sur ce format            |
+
+**48 tests E2E verts** au total, desktop et mobile.

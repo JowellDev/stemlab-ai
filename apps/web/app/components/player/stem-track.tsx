@@ -79,9 +79,9 @@ export function StemTrack({
           <Headphones aria-hidden className="size-4" />
         </button>
 
-        <label className="ml-1 flex items-center">
-          <span className="sr-only">Volume de la piste {label}</span>
+        <div className="ml-1 flex items-center">
           <Slider
+            thumbLabel={`Volume de la piste ${label}`}
             value={[mix.volume]}
             min={0}
             max={1}
@@ -89,7 +89,7 @@ export function StemTrack({
             onValueChange={([value]) => player?.setVolume(mix.type, value ?? 0)}
             className="w-20 sm:w-24"
           />
-        </label>
+        </div>
       </div>
 
       <div className="relative col-span-2 h-14 sm:col-span-1 sm:h-12">

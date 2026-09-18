@@ -71,6 +71,7 @@ Trois principes structurent le découpage :
 ├─ packages/
 │  ├─ contracts/           schémas Zod et types partagés (source de vérité des API)
 │  ├─ database/            schéma Prisma, migrations, client généré
+│  ├─ music/               théorie musicale : transposition, grille, recherche
 │  ├─ ui/                  composants shadcn/ui et thème partagé
 │  └─ audio-engine/        moteur Web Audio, sans dépendance à un framework
 ├─ infra/

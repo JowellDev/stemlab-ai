@@ -7,4 +7,9 @@ export * from './decode.js'
 export * from './emitter.js'
 export * from './peaks.js'
 export * from './observe-position.js'
-export { MultitrackPlayer, type MultitrackPlayerOptions } from './multitrack-player.js'
+export {
+  MAX_RATE,
+  MIN_RATE,
+  MultitrackPlayer,
+  type MultitrackPlayerOptions,
+} from './multitrack-player.js'

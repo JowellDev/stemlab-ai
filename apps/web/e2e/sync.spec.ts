@@ -131,7 +131,8 @@ test('la position suit l horloge audio sans deriver', async ({ page }) => {
   // longtemps a demarrer l'audio, sans que la propriete testee change.
   const samples = await page.evaluate(async () => {
     const readDisplayed = () => {
-      const text = document.querySelector('p.tabular-nums span')?.textContent ?? '0:00.0'
+      const text =
+        document.querySelector('[data-testid="playback-position"]')?.textContent ?? '0:00.0'
       const [minutes = '0', seconds = '0'] = text.split(':')
       return Number(minutes) * 60 + Number(seconds)
     }

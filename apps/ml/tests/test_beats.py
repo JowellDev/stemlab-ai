@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import numpy as np
 
 from ml.pipeline.beats import beat_loudness, build_grid
@@ -61,3 +63,42 @@ def test_energie_par_temps() -> None:
     mono[22_000:22_100] = 1.0
     values = beat_loudness(mono, 44_100, [0.0, 0.5])
     assert values[1] > values[0]
+
+
+class TestPhaseParLesAccords:
+    """Les changements d'accord designent les temps forts bien plus surement que
+    l'energie, qu'une batterie reguliere repartit uniformement."""
+
+    BEATS: ClassVar[list[float]] = [index * 0.5 for index in range(16)]
+
+    def test_place_le_temps_fort_sur_les_changements_d_accord(self) -> None:
+        # Les accords changent aux index 1, 5, 9, 13 : le « un » doit s'y placer.
+        chord_starts = [0.5, 2.5, 4.5, 6.5]
+        grid = build_grid(self.BEATS, chord_starts=chord_starts)
+        assert grid.beats[1][1] == 1
+        assert grid.first_beat_offset == 0.5
+
+    def test_prime_sur_l_energie(self) -> None:
+        # L'energie designe l'index 0, les accords l'index 2 : les accords gagnent.
+        loudness = np.zeros(16, dtype=np.float32)
+        loudness[0::4] = 9.0
+        grid = build_grid(self.BEATS, loudness, chord_starts=[1.0, 3.0, 5.0, 7.0])
+        assert grid.beats[2][1] == 1
+
+    def test_ignore_des_changements_trop_rares(self) -> None:
+        # Un seul changement ne donne aucune marge : on retombe sur l'energie.
+        grid = build_grid(self.BEATS, chord_starts=[1.0])
+        assert grid.beats[0][1] == 1
+
+    def test_ignore_des_changements_hors_grille(self) -> None:
+        # Des changements qui ne tombent sur aucun temps n'apprennent rien.
+        grid = build_grid(self.BEATS, chord_starts=[0.23, 1.17, 2.31, 3.09])
+        assert grid.beats[0][1] == 1
+
+    def test_ignore_une_egalite(self) -> None:
+        grid = build_grid(self.BEATS, chord_starts=[0.0, 0.5, 2.0, 2.5])
+        assert grid.beats[0][1] == 1
+
+    def test_sans_accord_le_comportement_est_inchange(self) -> None:
+        grid = build_grid(self.BEATS, chord_starts=[])
+        assert grid.beats[0][1] == 1

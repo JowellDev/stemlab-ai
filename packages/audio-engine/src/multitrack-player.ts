@@ -26,6 +26,10 @@ import type {
  *  assez longue pour qu'aucun changement de volume ne produise de clic. */
 const GAIN_RAMP_SECONDS = 0.015
 
+/** Bornes du facteur de vitesse exposees par l'interface. */
+export const MIN_RATE = 0.5
+export const MAX_RATE = 1.5
+
 export interface MultitrackPlayerOptions {
   /** Contexte existant a reutiliser. Un contexte par page suffit et evite les
    *  limites de Safari sur le nombre d'AudioContext simultanes. */
@@ -99,6 +103,11 @@ export class MultitrackPlayer {
 
   get masterVolume(): number {
     return this.#masterVolume
+  }
+
+  /** Facteur de vitesse courant. 1 = tempo original. */
+  get playbackRate(): number {
+    return this.#clock.rate
   }
 
   snapshot(): PlayerSnapshot {
@@ -231,6 +240,36 @@ export class MultitrackPlayer {
     }
   }
 
+  /**
+   * Change la vitesse de lecture.
+   *
+   * L'horloge est reancree sur la position courante au moment du changement :
+   * sans cela, tout le temps deja ecoule serait reinterprete a la nouvelle
+   * vitesse et la position afficherait un saut.
+   *
+   * Cette implementation modifie le `playbackRate` des sources, ce qui deplace
+   * aussi la hauteur. La phase 6 remplace le mecanisme par un AudioWorklet
+   * SoundTouch, qui dissocie les deux — l'API exposee ici ne change pas.
+   */
+  setPlaybackRate(rate: number): void {
+    this.#assertAlive()
+    const clamped = clampRate(rate)
+    if (clamped === this.#clock.rate) return
+
+    const position = this.position
+    const playing = this.#state === 'playing'
+
+    this.#clock = playing
+      ? startedClock(this.#context.currentTime, position, clamped)
+      : pausedClock(position, clamped)
+
+    for (const channel of this.#channels.values()) {
+      if (channel.source) channel.source.playbackRate.value = clamped
+    }
+
+    if (playing) this.#scheduleEndCheck()
+  }
+
   #startAt(position: number): void {
     const plan = planStart({
       stems: [...this.#channels.values()].map((channel) => ({
@@ -255,6 +294,7 @@ export class MultitrackPlayer {
       if (!channel) continue
       const source = this.#context.createBufferSource()
       source.buffer = channel.buffer
+      source.playbackRate.value = this.#clock.rate
       source.connect(channel.gain)
       // `when` est identique pour toutes les pistes : c'est ce qui garantit la synchro.
       source.start(scheduled.when, scheduled.offset)
@@ -418,6 +458,11 @@ export class MultitrackPlayer {
     this.#destroyed = true
     if (this.#ownsContext) void this.#context.close().catch(() => {})
   }
+}
+
+function clampRate(rate: number): number {
+  if (!Number.isFinite(rate)) return 1
+  return Math.min(MAX_RATE, Math.max(MIN_RATE, rate))
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -1,7 +1,7 @@
 import { Alert, AlertDescription } from '@stemlab/ui'
 import type { TrackSummary } from '@stemlab/contracts'
-import { Library } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { Library as LibraryIcon } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRevalidator } from 'react-router'
 import { AppShell } from '~/components/app-shell'
 import { TrackCard } from '~/components/track-card'
@@ -56,7 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 }
 
-export default function Bibliotheque({ loaderData }: Route.ComponentProps) {
+export default function Library({ loaderData }: Route.ComponentProps) {
   const { user, tracks } = loaderData
   const revalidator = useRevalidator()
   const [deleting, setDeleting] = useState<Set<string>>(() => new Set())
@@ -84,15 +84,20 @@ export default function Bibliotheque({ loaderData }: Route.ComponentProps) {
   )
 
   // Un morceau qui vient de passer a `ready` n'a pas encore sa tonalite ni son
-  // tempo cote client : on redemande les donnees au serveur.
+  // tempo cote client : on redemande les donnees au serveur. Cet effet ne peut pas
+  // vivre dans le corps du rendu — declencher une navigation pendant qu'un autre
+  // composant se rend est precisement ce que React interdit.
   const justFinished = merged.some(
     (track) =>
       track.status === 'ready' &&
       tracks.find((original) => original.id === track.id)?.status !== 'ready',
   )
-  if (justFinished && revalidator.state === 'idle') {
-    void revalidator.revalidate()
-  }
+
+  useEffect(() => {
+    if (justFinished && revalidator.state === 'idle') {
+      void revalidator.revalidate()
+    }
+  }, [justFinished, revalidator])
 
   const onDelete = useCallback(
     async (trackId: string) => {
@@ -144,7 +149,7 @@ export default function Bibliotheque({ loaderData }: Route.ComponentProps) {
 
         {merged.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-10 text-center">
-            <Library aria-hidden className="size-6 text-muted-foreground/70" />
+            <LibraryIcon aria-hidden className="size-6 text-muted-foreground/70" />
             <p className="text-sm text-muted-foreground">
               Deposez un premier morceau pour le decomposer en pistes.
             </p>

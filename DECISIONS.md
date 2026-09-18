@@ -568,3 +568,103 @@ quelle que soit la topologie.
 `routes/dashboard/`, `routes/api/` — et **nommées en anglais**, URL comprises
 (`/login`, `/signup`, `/library`, `/tracks/:id`). Les textes affichés restent en
 français : c'est la langue du produit, pas celle du code.
+
+---
+
+## 2026-09-18 — `packages/music` : la théorie musicale, pure et testable
+
+**Décision.** Transposition, orthographe des hauteurs, recherche de l'élément actif et
+construction de la grille de mesures vivent dans un paquet dédié, sans dépendance à
+React ni à Web Audio.
+
+**Pourquoi pas dans `audio-engine`.** Transposer un libellé d'accord n'a rien à voir
+avec Web Audio. Séparer les deux garde `audio-engine` centré sur ce qu'il fait — la
+synchronisation — et rend la théorie musicale testable sans le moindre simulacre.
+
+---
+
+## 2026-09-18 — La position est exprimée dans le temps du morceau
+
+**Constat.** C'est ce qui rend l'alignement des accords gratuit sous changement de
+tempo.
+
+`positionAt()` calcule `offset + écoulé × vitesse`. À 75 %, quatre secondes d'horloge
+donnent trois secondes de morceau. La position rendue est donc **toujours** dans le
+référentiel de l'analyse, jamais dans celui de la restitution. Aucun réalignement
+n'est nécessaire — et c'est précisément ce que vérifie le test de la DoD.
+
+**Corollaire pour le changement de vitesse.** L'horloge doit être ré-ancrée sur la
+position courante au moment du changement : sans cela, tout le temps déjà écoulé
+serait réinterprété à la nouvelle vitesse et la position ferait un saut.
+
+---
+
+## 2026-09-18 — L'orthographe des hauteurs suit l'armure
+
+**Décision.** Une même touche s'écrit `F#` ou `Gb` selon la tonalité. L'orthographe
+retenue est celle de l'armure de la tonalité obtenue **après** transposition.
+
+**Pourquoi ça compte.** Transposer ré majeur d'un demi-ton donne mi bémol majeur :
+écrire `D#` y serait faux pour un musicien. Un test écrit naïvement a d'ailleurs
+échoué sur ce point — c'est l'application qui avait raison.
+
+**Cas d'égalité.** À six altérations, les deux graphies se valent. On tranche par
+l'usage : `F#` majeur et `Ebm` mineur.
+
+---
+
+## 2026-09-18 — La grille de mesures est calée sur les changements d'accord
+
+**Problème observé à l'écran.** La grille était décalée d'une demi-mesure. La phase
+des temps forts venait de l'énergie, et une batterie régulière — un quatre-à-la-noire,
+par exemple — répartit la même énergie sur tous les temps : l'heuristique n'avait rien
+pour trancher.
+
+**Décision.** Le pipeline construit désormais la grille **après** la détection
+d'accords, et choisit la phase qui place le plus de changements d'accord sur un temps
+fort. Une harmonie change presque toujours sur un temps fort ; c'est un indice bien
+plus fiable que l'énergie. L'énergie reste le repli quand les changements sont trop
+rares ou trop dispersés pour trancher.
+
+**Résultat mesuré.** Sur la ballade, le premier temps fort tombe à 3,135 s — exactement
+sur un changement d'accord.
+
+---
+
+## 2026-09-18 — Le suivi de lecture ne passe pas par l'état React
+
+**Décision.** Les vues d'accords s'abonnent à la position et n'écrivent que des
+attributs DOM (`data-active`), sans re-rendu.
+
+**Pourquoi.** La recherche est une dichotomie — négligeable — mais elle tourne à
+chaque frame. Le rappel n'est déclenché que lorsque l'élément actif **change** : un
+accord durant plusieurs secondes, cela représente une notification pour trois cents
+frames muettes.
+
+**Défilement.** Il suit les changements d'accord, pas chaque frame. Un recentrage
+continu donnerait un mouvement flottant, désagréable à suivre.
+
+---
+
+## 2026-09-18 — Deux corrections d'accessibilité trouvées par les tests mobiles
+
+**Le nom accessible disparaissait sous 640 px.** Les boutons de vue portaient leur
+libellé dans un `<span class="hidden sm:inline">` : à 390 px, ils n'avaient plus
+aucun nom. Un `aria-label` permanent corrige le problème, et c'est le test mobile qui
+l'a révélé.
+
+**Les curseurs n'avaient pas de nom.** Dans un slider Radix, c'est la **poignée** qui
+porte le rôle `slider`, pas la racine : un `aria-label` posé sur le composant
+n'atteint aucune technologie d'assistance. Le composant partagé expose désormais
+`thumbLabel`, qui le transmet à chaque poignée.
+
+---
+
+## 2026-09-18 — Les tests localisent la position par un identifiant stable
+
+**Décision.** L'affichage de position porte `data-testid="playback-position"`.
+
+**Pourquoi.** Les tests le trouvaient jusque-là par une classe utilitaire
+(`p.tabular-nums span`), qui a changé au premier remaniement de style — et qui
+désignait deux éléments. Une valeur dynamique que plusieurs suites doivent lire mérite
+un point d'ancrage explicite.
