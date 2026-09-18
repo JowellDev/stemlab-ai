@@ -21,7 +21,14 @@ const SignUpForm = z.object({
 type FieldErrors = Partial<Record<'name' | 'email' | 'password', string>>
 
 export function meta(_args: Route.MetaArgs) {
-  return [{ title: 'Creer un compte — STEMLAB' }]
+  return [
+    { title: 'Creer un compte — STEMLAB' },
+    {
+      name: 'description',
+      content:
+        'Creez un compte pour separer vos morceaux en pistes et en detecter tonalite, tempo et accords.',
+    },
+  ]
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

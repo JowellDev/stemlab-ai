@@ -809,3 +809,164 @@ sur le chemin principal : il n'y a plus de source par piste.
 La garantie inter-pistes, elle, a changé de nature : elle est mesurée par
 `drift.spec.ts` et garantie par construction. Les tests unitaires du moteur de repli
 continuent de vérifier l'instant partagé, qui reste sa propriété.
+
+---
+
+## 2026-09-18 — Le repli hors ligne est une page statique, pas une route
+
+**Constat.** Le service worker sert la page de repli sous l'URL demandée. Si cette
+page est le rendu serveur d'une route React Router, le client l'hydrate contre une
+**autre** route que celle qui a produit le HTML, et bascule sur la frontière
+d'erreur : l'utilisateur hors réseau lit « Une erreur est survenue » au lieu de
+« Hors connexion ».
+
+**Décision.** `public/offline.html` — aucun script, aucune requête, précachée comme un
+fichier ordinaire. La route `routes/offline.tsx` est supprimée.
+
+**Conséquence assumée.** Cette page ne peut pas lister les morceaux déjà téléchargés :
+elle n'exécute rien. Elle renvoie vers la bibliothèque, qui, elle, est une page
+applicative mise en cache à la visite.
+
+---
+
+## 2026-09-18 — `navigateFallback` de Workbox est neutralisé
+
+**Constat.** Deux comportements de Workbox, tous deux contre-intuitifs :
+
+1. `navigateFallback` enregistre sa route **avant** celles de `runtimeCaching`, et le
+   routeur retient la première qui correspond. Hors ligne, la page d'un morceau
+   pourtant présente dans le cache `pages` n'était jamais servie.
+2. `navigateFallback` ne **précache pas** la page qu'il désigne : il la suppose déjà
+   dans le manifeste, ce qui n'est vrai que d'un `index.html` produit par le build.
+
+**Décision.** La déclaration est conservée — elle fait entrer la page dans le
+précache — mais sa route est rendue inopérante par `navigateFallbackDenylist: [/./]`,
+et le repli est recâblé après la tentative réseau puis le cache, par
+`precacheFallback` sur la route de navigation.
+
+**Pourquoi pas `injectManifest`.** Un service worker écrit à la main donnerait un
+contrôle total et supprimerait cette ruse. Il ajoute en échange un point d'entrée à
+maintenir, ses propres dépendances Workbox et une configuration TypeScript
+« webworker ». À reconsidérer si la phase 8 demande des routes que `generateSW` ne
+sait pas exprimer.
+
+---
+
+## 2026-09-18 — La file d'envoi différée distingue refus et panne
+
+**Décision.** Un envoi mis en attente est retiré de la file quand le serveur le
+**refuse** (`bad_request`, `forbidden`, `not_found`, `payload_too_large`,
+`unsupported_media_type`, `quota_exceeded`) : le réessayer donnerait le même refus, et
+le garder encombrerait le stockage de l'appareil. Tout le reste — réseau coupé,
+serveur en panne, session à renouveler — laisse le fichier en attente.
+
+La boucle s'arrête au **premier** échec transitoire : si un envoi ne passe pas, les
+suivants ne passeront pas davantage, et chaque tentative coûte de la batterie.
+
+**Plafond.** 400 Mo, distinct du budget des morceaux téléchargés. Un envoi en attente
+est un fichier source complet ; quatre morceaux de 100 Mo suffisent à saturer un
+téléphone. Mieux vaut refuser franchement que faire échouer l'écriture plus tard.
+
+---
+
+## 2026-09-18 — Le score « PWA » de Lighthouse n'existe plus
+
+**Problème dans la spécification.** Elle exige un « score Lighthouse PWA ≥ 90 ». La
+catégorie PWA a été **retirée de Lighthouse à partir de la version 12** ; la version
+13 ne propose plus que `performance`, `accessibility`, `best-practices`, `seo` et
+`agentic-browsing`.
+
+**Correction appliquée.** Les critères que cette catégorie agrégeait sont vérifiés un
+à un par `e2e/offline.spec.ts` : manifeste installable, icônes 192/512 et maskable,
+service worker actif, fonctionnement hors réseau. Les quatre catégories restantes sont
+mesurées et consignées.
+
+**Mesure** (build de production, `/login`, mobile 390 px) : performance 97,
+accessibilité 100, bonnes pratiques 100, SEO 100. En format bureau, la performance
+tombe à 78 — le préréglage bureau de Lighthouse bride fortement le processeur par
+rapport à ses propres seuils ; `TBT` et `CLS` sont à zéro dans les deux cas.
+
+---
+
+## 2026-09-18 — Inter est servie par l'application
+
+**Constat.** La feuille de style `fonts.googleapis.com` est bloquante pour le rendu, et
+inaccessible hors ligne — l'interface perdait sa police en mode avion.
+
+**Décision.** Les deux sous-ensembles latins (130 Ko) sont servis depuis
+`public/fonts/` et précachés avec le reste. La règle `runtimeCaching` qui mettait en
+cache les polices tierces disparaît, faute d'objet.
+
+---
+
+## 2026-09-18 — Un marqueur d'hydratation pour les tests
+
+**Constat.** Le HTML rendu par le serveur est complet avant que React n'attache ses
+gestionnaires. Playwright rejoue un clic émis trop tôt ; il ne rejoue **pas** un
+`change`. Remplir un champ fichier avant l'hydratation perdait l'événement sans
+qu'aucune erreur ne le signale — deux tests échouaient par intermittence.
+
+**Décision.** `<html data-hydrated="true">` est posé par un effet dans `root.tsx`, et
+les tests attendent ce marqueur avant toute interaction non rejouable.
+
+**Alternative écartée.** Masquer la zone de dépôt jusqu'à l'hydratation : cela
+dégraderait l'affichage initial pour tous les utilisateurs afin de servir un besoin
+de test.
+
+---
+
+## 2026-09-18 — Les paroles passent avant la mise en production
+
+**Demande.** Transcription des paroles et traduction français ↔ anglais, demandée
+avant la mise en production.
+
+**Décision.** La feuille de route devient : phase 8 durcissement, **phase 9 paroles et
+traduction**, phase 10 mise en production. Les phases sont renumérotées en
+conséquence dans `PROGRESS.md`.
+
+**Approche retenue.** `faster-whisper` (MIT) sur le stem `vocals` déjà isolé — une voix
+débarrassée de la batterie et de la basse se transcrit nettement mieux que le mixage.
+Horodatage au mot, calé sur la grille de mesures existante, donc défilement et
+navigation par clic comme pour les accords. Whisper traduit nativement vers l'anglais ;
+l'anglais vers le français demande un second modèle (NLLB-200 ou M2M-100, licences
+permissives à confirmer). Le texte pèse quelques kilo-octets : il part avec le morceau
+téléchargé, sans surcoût hors ligne.
+
+---
+
+## 2026-09-18 — Évaluation des fonctionnalités musicales demandées
+
+Sept demandes, trois groupes très inégaux. Consigné ici pour que l'arbitrage soit
+explicite avant d'engager le travail.
+
+**Faisable rapidement, sans modèle nouveau**
+
+- **Choix direct d'une tonalité** — le moteur transpose déjà en demi-tons et la
+  tonalité est détectée ; il ne manque qu'un sélecteur qui calcule l'écart.
+- **Tap tempo** — médiane des intervalles entre frappes, puis réancrage de la grille.
+- **Décompte avant lancement** — une ou deux mesures de clics synthétisés sur la
+  grille existante.
+
+**Faisable, sous réserve de licence des poids**
+
+- **Voix principale / chœurs** — les modèles « karaoke » (Mel-Band-RoFormer, MDX-Net)
+  le font correctement. Le risque n'est pas technique : plusieurs jeux de poids sont
+  **non commerciaux**, ce qui rejoint exactement la contrainte posée sur madmom. À
+  vérifier avant intégration, et à écarter si la licence ne convient pas.
+- **Éléments de batterie** (grosse caisse, caisse claire, toms, charleston, cymbales)
+  — LarsNet, entraîné sur StemGMD, fait précisément cela. Même réserve.
+- **Repères vocaux par section** — détection de structure par `allin1`, annonce par la
+  synthèse vocale du navigateur (multilingue, gratuite, disponible hors ligne sur la
+  plupart des plateformes).
+
+**Hors de portée, et il faut le dire**
+
+- **Piano 1 / Piano 2, Guitare 1 / Guitare 2.** Séparer deux instances du **même**
+  instrument n'est pas un problème résolu : la séparation de sources distingue des
+  timbres, pas des exécutants. `htdemucs_6s` produit **une** piste guitare et **une**
+  piste piano, et aucun modèle publié ne va au-delà de façon fiable.
+
+  **Ce qui est proposé à la place** : une division par position stéréo et par
+  registre. Efficace quand les deux guitares sont panoramisées de part et d'autre,
+  inopérante quand elles sont au centre. Utile, mais à présenter comme tel — pas
+  comme une séparation.

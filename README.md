@@ -73,7 +73,8 @@ Trois principes structurent le découpage :
 │  ├─ database/            schéma Prisma, migrations, client généré
 │  ├─ music/               théorie musicale : transposition, grille, recherche
 │  ├─ ui/                  composants shadcn/ui et thème partagé
-│  └─ audio-engine/        moteur Web Audio, sans dépendance à un framework
+│  ├─ audio-engine/        moteur Web Audio, sans dépendance à un framework
+│  └─ offline/             stockage OPFS, budget, file d'envoi différée
 ├─ infra/
 │  ├─ docker-compose.yml   stack de développement complète
 │  ├─ fly/                 déploiement web + API
@@ -237,9 +238,48 @@ classiques — le tempo déplace alors aussi la hauteur, et l'interface le signa
 
 ---
 
+## Hors-ligne et installation
+
+L'application s'installe depuis le navigateur et fonctionne sans réseau pour les
+morceaux déjà téléchargés.
+
+```
+/tracks/:id  ──[ Rendre disponible hors connexion ]──►  OPFS
+                                                         ├─ vocals.opus
+                                                         ├─ drums.opus
+                                                         └─ …
+```
+
+**Les octets sont sur l'appareil, pas seulement la page.** Les stems sont conservés
+dans l'_Origin Private File System_, et le lecteur les lit par des URL d'un schéma
+interne — `stemlab-offline:<trackId>/<stem>` — résolues par un `fetch` dédié. Le
+moteur audio ignore d'où viennent les octets.
+
+**Budget et éviction.** 2 Gio, en gardant 50 Mio de marge sur le quota du navigateur.
+Quand la place manque, les morceaux les moins récemment lus partent d'abord ; celui
+qu'on télécharge est protégé.
+
+**Envoi différé.** Un fichier déposé sans réseau est conservé localement et reparti
+tout seul au retour de la connexion. Un refus du serveur (format, taille, quota) le
+retire de la file ; une panne réseau l'y laisse.
+
+**Routage du service worker.** Une navigation tente le réseau, retombe sur la page en
+cache, puis sur `public/offline.html` — une page **statique**, sans script. Servir le
+rendu serveur d'une route sous une autre URL casserait l'hydratation.
+
+> **Piège connu.** `navigateFallback` de Workbox enregistre sa route avant celles de
+> `runtimeCaching` et ne précache pas la page qu'il désigne. Les deux comportements
+> sont contournés explicitement dans `vite.config.ts` ; voir `DECISIONS.md`.
+
+**Vérification.** `e2e/offline.spec.ts` s'exécute contre un **build de production**
+(format Playwright `pwa`, port 3200) : en développement, les modules servis par Vite
+ne sont pas précachés et la page ne s'hydraterait jamais hors réseau.
+
+---
+
 ## Déploiement
 
-_Détaillé en phase 9._ La cible : web et API sur **Fly.io** (deux régions, migrations
+_Détaillé en phase 10._ La cible : web et API sur **Fly.io** (deux régions, migrations
 jouées à la release), worker GPU **serverless sur Modal** (L4, _scale-to-zero_ : aucune
 instance GPU allumée à vide), stockage **Cloudflare R2** derrière un CDN.
 

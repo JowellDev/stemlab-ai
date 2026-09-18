@@ -25,6 +25,7 @@ export default [
     route('upload/init', 'routes/api/upload.init.ts'),
     route('upload/complete', 'routes/api/upload.complete.ts'),
     route('tracks/events', 'routes/api/tracks.events.ts'),
+    route('tracks/:trackId/stems', 'routes/api/tracks.$trackId.stems.ts'),
     route('tracks/:trackId/delete', 'routes/api/tracks.$trackId.delete.ts'),
 
     // Webhook du service ML : signe HMAC, jamais appele par le navigateur.

@@ -9,9 +9,10 @@
 | 4     | Auth, upload, bibliothèque | ⏳ à venir  | —          | —                                                                            |
 | 5     | Accords, tonalité, tempo   | ⏳ à venir  | —          | —                                                                            |
 | 6     | Pitch et tempo             | ⏳ à venir  | —          | —                                                                            |
-| 7     | PWA et hors-ligne          | ⏳ à venir  | —          | —                                                                            |
+| 7     | PWA et hors-ligne          | ✅ terminée | 2026-09-18 | Installation Chrome Android / Safari iOS non constatée (aucun appareil ici)  |
 | 8     | Durcissement               | ⏳ à venir  | —          | —                                                                            |
-| 9     | Production                 | ⏳ à venir  | —          | —                                                                            |
+| 9     | Paroles et traduction      | ⏳ à venir  | —          | Insérée à la demande, avant la mise en production                            |
+| 10    | Production                 | ⏳ à venir  | —          | Anciennement phase 9                                                         |
 
 ---
 
@@ -224,3 +225,35 @@ reste écarté, comme demandé.
   n'a pas de sortie audio. Le rendu hors-ligne prouve la justesse du traitement, pas
   la tenue en temps réel sous charge. À constater à l'oreille avant la mise en
   production.
+
+---
+
+## Phase 7 — PWA et hors-ligne (2026-09-18)
+
+**Definition of Done — vérifiée par exécution**
+
+| Critère                                                  | Vérification                                                          |
+| -------------------------------------------------------- | --------------------------------------------------------------------- |
+| Manifeste et application installable                     | ✅ vérifié sur le build de production                                 |
+| Icônes 192/512 + maskable                                | ✅ servies, dimensions contrôlées                                     |
+| Service worker enregistré et actif                       | ✅                                                                    |
+| **Un morceau téléchargé se lit en mode avion**           | ✅ lecture **et** seek, réseau réellement coupé au niveau du contexte |
+| Un morceau non téléchargé ne prétend pas être disponible | ✅ page de repli statique, aucun bouton de lecture                    |
+| File d'envoi différée                                    | ✅ mise en attente sans réseau, reprise automatique au retour         |
+| Mobile 390 px                                            | ✅ un format d'exécution complet parmi les trois                      |
+
+**Tests** : 61 unitaires (`@stemlab/offline`), 58 E2E sur trois formats.
+
+**Lighthouse** (build de production, `/login`, mobile 390 px) : performance 97,
+accessibilité 100, bonnes pratiques 100, SEO 100.
+
+**Non vérifié**
+
+- **Le « score PWA ≥ 90 » de la spécification** : cette catégorie a été retirée de
+  Lighthouse à partir de la version 12. Ses critères sont vérifiés un à un par
+  `e2e/offline.spec.ts` — voir `DECISIONS.md`.
+- **L'installation réelle sur Chrome Android et Safari iOS** : aucun appareil ni
+  émulateur disponible ici. À constater avant la mise en production.
+
+**Feuille de route modifiée.** Les paroles et leur traduction passent en phase 9, à la
+demande, avant la mise en production qui devient la phase 10.

@@ -7,6 +7,7 @@ import {
 } from '@stemlab/audio-engine'
 import type { AnalysisResult } from '@stemlab/contracts'
 import { pitchClassIndex } from '@stemlab/music'
+import { offlineUrl } from '@stemlab/offline'
 import { Alert, AlertDescription, Button, Slider } from '@stemlab/ui'
 import { Gauge, Info, Music2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -14,13 +15,19 @@ import { ChordPanel } from '~/components/chords/chord-panel'
 import { PlayerControls, type PlayerStem } from '~/components/player/player-controls'
 import { ShortcutLegend } from '~/components/player/shortcut-legend'
 import { StatusBadge } from '~/components/player/status-badge'
+import { OfflineToggle } from '~/components/offline-toggle'
+import { useOfflineTrack } from '~/hooks/use-offline-track'
 import { usePlayPause, useMultitrackPlayer } from '~/hooks/use-multitrack-player'
+import { createLazyOfflineFetch } from '~/lib/offline.client'
 
 interface TrackWorkspaceProps {
+  trackId: string
   title: string
   subtitle?: string
   stems: readonly PlayerStem[]
   analysis: AnalysisResult | null
+  /** Format de chaque piste, pour le stockage hors-ligne. */
+  formats: Readonly<Record<string, string>>
 }
 
 /**
@@ -29,11 +36,34 @@ interface TrackWorkspaceProps {
  * Le lecteur est detenu ici et partage : la grille d'accords et les pistes lisent
  * la meme horloge, ce qui garantit qu'elles ne peuvent pas diverger.
  */
-export function TrackWorkspace({ title, subtitle, stems, analysis }: TrackWorkspaceProps) {
-  const sources = useMemo<StemSource[]>(
-    () => stems.map(({ type, url }) => ({ type, url })),
-    [stems],
+export function TrackWorkspace({
+  trackId,
+  title,
+  subtitle,
+  stems,
+  analysis,
+  formats,
+}: TrackWorkspaceProps) {
+  const loadStems = useCallback(
+    async () =>
+      stems.map((stem) => ({
+        type: stem.type,
+        url: stem.url,
+        format: formats[stem.type] ?? 'opus',
+      })),
+    [stems, formats],
   )
+  const offline = useOfflineTrack({ trackId, title, loadStems })
+
+  // Une fois le morceau stocke, on lit les octets locaux : les URL presignees
+  // expirent, pas celles-ci — et c'est ce qui rend la lecture possible sans reseau.
+  const stored = offline.state === 'stored'
+  const sources = useMemo<StemSource[]>(
+    () => stems.map(({ type, url }) => ({ type, url: stored ? offlineUrl(trackId, type) : url })),
+    [stems, stored, trackId],
+  )
+  const offlineFetch = useMemo(() => (stored ? createLazyOfflineFetch() : undefined), [stored])
+
   const {
     player,
     transport,
@@ -42,7 +72,7 @@ export function TrackWorkspace({ title, subtitle, stems, analysis }: TrackWorksp
     progress,
     error,
     supportsIndependentPitch,
-  } = useMultitrackPlayer(sources)
+  } = useMultitrackPlayer(sources, offlineFetch)
   const togglePlay = usePlayPause(player, transport)
 
   const [semitones, setSemitones] = useState(0)
@@ -81,6 +111,7 @@ export function TrackWorkspace({ title, subtitle, stems, analysis }: TrackWorksp
           <h1 className="text-2xl font-semibold">{title}</h1>
           {subtitle ? <p className="text-muted-foreground text-sm">{subtitle}</p> : null}
         </div>
+        <OfflineToggle offline={offline} title={title} />
         <StatusBadge
           state={transport}
           loaded={progress?.loaded ?? 0}
@@ -91,6 +122,12 @@ export function TrackWorkspace({ title, subtitle, stems, analysis }: TrackWorksp
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>Chargement impossible : {error.message}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {offline.error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{offline.error}</AlertDescription>
         </Alert>
       ) : null}
 

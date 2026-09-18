@@ -1,4 +1,5 @@
 import { cn } from '@stemlab/ui'
+import { OfflineIndicator } from '~/components/offline-indicator'
 import { AudioLines, LogOut } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Form, Link, NavLink } from 'react-router'
@@ -12,6 +13,7 @@ interface AppShellProps {
 export function AppShell({ user, children }: AppShellProps) {
   return (
     <div className="flex min-h-dvh flex-col">
+      <OfflineIndicator />
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <Link to="/" className="flex items-center gap-2">

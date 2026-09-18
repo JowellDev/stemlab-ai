@@ -11,6 +11,8 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/build/**',
       '**/dist/**',
+      // Service worker de developpement, regenere par vite-plugin-pwa.
+      '**/dev-dist/**',
       '**/.react-router/**',
       '**/.turbo/**',
       '**/coverage/**',
@@ -51,6 +53,12 @@ export default tseslint.config(
     files: ['apps/web/**/*.{ts,tsx}'],
     // `configs.recommended` reste au format eslintrc ; la variante plate est sous `configs.flat`.
     ...reactHooks.configs.flat['recommended-latest'],
+  },
+  {
+    // Les scripts d'outillage rendent compte sur la sortie standard : c'est leur
+    // interface, pas une trace de debogage oubliee.
+    files: ['**/scripts/**/*.{mjs,js,ts}'],
+    rules: { 'no-console': 'off' },
   },
   prettier,
 )

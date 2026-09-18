@@ -919,3 +919,147 @@ vérifier l'instant partagé, qui reste sa propriété à lui.
 **Non vérifié** : l'absence d'accroc audio « sur un processeur de milieu de gamme »
 ne peut pas être constatée ici — l'environnement n'a pas de sortie audio. Le rendu
 hors-ligne prouve la justesse du traitement, pas la tenue en temps réel sous charge.
+
+---
+
+# Phase 7 — PWA et hors-ligne
+
+## 7.1 — Ce que « hors-ligne » veut dire ici
+
+Un morceau déjà traité doit se lire **intégralement** en mode avion : les quatre
+pistes, la grille d'accords, le tempo et la hauteur indépendants, le déplacement de
+la tête de lecture. Autrement dit, les octets audio doivent être sur l'appareil, pas
+seulement la page.
+
+Trois pièces, donc : un stockage local qui tienne des dizaines de mégaoctets, un
+service worker qui serve la page du morceau sans réseau, et un moyen pour le lecteur
+de lire ces octets comme s'ils venaient du serveur.
+
+## 7.2 — OPFS plutôt qu'IndexedDB
+
+Les stems font quelques mégaoctets chacun. L'_Origin Private File System_ les
+conserve comme de vrais fichiers, sans sérialisation, et les range en répertoires —
+supprimer un morceau devient un seul appel. IndexedDB aurait imposé d'empaqueter des
+blobs dans une base clé-valeur pour le même service, en moins direct.
+
+`packages/offline` isole cette logique derrière une interface étroite, `FileStorage`.
+L'intérêt n'est pas l'abstraction pour elle-même : c'est que l'éviction, le budget et
+la cohérence du manifeste se testent sans navigateur, avec une implémentation en
+mémoire, donc vite et sans simuler une API dont on ne maîtrise pas le comportement.
+
+Le manifeste vit **dans le stockage lui-même**. S'il vivait dans IndexedDB, vider le
+site effacerait les fichiers sans effacer leur description : le manifeste décrirait
+des morceaux injouables.
+
+## 7.3 — Le budget et un défaut de comptage
+
+`OfflineStore` s'impose 2 Gio, et refuse d'approcher le quota réel de moins de
+50 Mio. Quand la place manque, les morceaux les moins récemment lus partent d'abord.
+
+Un défaut est apparu au test : réenregistrer un morceau déjà stocké comptait sa
+taille **en plus** de celle qu'il occupait déjà, et l'éviction se déclenchait pour
+rien. La correction tient en une ligne — retrancher la taille remplacée :
+
+```ts
+const replaced = manifest.tracks[protectedId]?.bytes ?? 0
+const delta = needed - replaced
+```
+
+## 7.4 — Faire lire le lecteur depuis le disque
+
+Le lecteur attend des URL. Plutôt que de lui apprendre deux modes, on lui donne des
+URL d'un schéma à nous — `stemlab-offline:<trackId>/<stem>` — et un `fetch` qui les
+résout depuis le stockage. Le reste du moteur ignore tout de la question.
+
+## 7.5 — Le service worker, et deux erreurs de routage
+
+`vite-plugin-pwa` en mode `generateSW`. La page d'un morceau est mise en cache à la
+visite (`NetworkFirst`, cache `pages`), le WASM d'étirement est précaché — sans lui,
+la lecture hors-ligne perdrait tempo et hauteur indépendants.
+
+**Première erreur.** `navigateFallback` enregistre sa route **avant** les règles de
+`runtimeCaching`, et Workbox retient la première route qui correspond. Hors ligne,
+toute navigation retombait donc sur la page d'attente, y compris celle d'un morceau
+présent dans le cache. La route de repli est désormais neutralisée
+(`navigateFallbackDenylist: [/./]`) et le repli recâblé **après** la tentative réseau
+puis le cache, via `precacheFallback`.
+
+**Seconde erreur, cachée par la première.** `navigateFallback` ne précache pas la page
+qu'il désigne : il la suppose déjà présente dans le manifeste — ce qui est vrai d'un
+`index.html` de build, faux d'une route rendue par le serveur. La page de repli
+n'était donc dans aucun cache, et la navigation hors ligne échouait sans rien dire.
+
+## 7.6 — La page de repli devient statique
+
+Servir le HTML d'une route React Router sous une **autre** URL casse l'hydratation :
+le client compare ce HTML à la route demandée et bascule sur la frontière d'erreur —
+« Une erreur est survenue » au lieu de « Hors connexion ».
+
+`public/offline.html` est donc une page statique : aucun script, aucune requête,
+précachée comme un fichier ordinaire. C'est précisément ce qu'on attend d'un repli
+hors ligne.
+
+## 7.7 — Un faux diagnostic, corrigé
+
+Pendant l'enquête, `page.reload()` échouait en `ERR_INTERNET_DISCONNECTED` là où un
+`location.reload()` déclenché dans la page semblait passer. J'en ai conclu que
+Playwright contournait le service worker, et j'ai écrit un contournement.
+
+C'était faux. Les deux échouaient ; seul `page.reload()` **remontait** l'échec. Une
+fois la page de repli réellement précachée, `page.reload()` fonctionne, et le
+contournement — ainsi que le commentaire qui l'expliquait — a été supprimé.
+
+## 7.8 — La file d'envoi différée
+
+Un fichier déposé sans réseau n'est pas perdu : il est écrit dans le même stockage
+local, listé sous le sélecteur, et reparti tout seul au retour de la connexion.
+L'événement `online` est le seul déclencheur — un minuteur réveillerait l'appareil
+pour rien la plupart du temps.
+
+La distinction qui compte est celle entre un échec **transitoire** et un **refus**.
+Un refus du serveur (format, taille, quota) retire l'envoi de la file : le réessayer
+donnerait le même refus. Un échec réseau arrête la boucle sans rien jeter — si un
+envoi ne passe pas, les suivants ne passeront pas davantage.
+
+## 7.9 — Un `change` ne se rejoue pas
+
+Deux tests échouaient par intermittence : le fichier déposé n'était jamais pris en
+compte. Le HTML rendu par le serveur est complet et cliquable **avant** l'hydratation,
+mais ses gestionnaires n'existent pas encore. Playwright rejoue un clic émis trop tôt ;
+il ne rejoue pas un `change`, qui est perdu sans rien laisser paraître.
+
+`<html data-hydrated>` marque le moment où React a pris la main, et les tests
+attendent ce marqueur avant toute interaction non rejouable. Le même piège avait déjà
+frappé les formulaires d'authentification en phase 4, où la parade avait été de les
+convertir en actions serveur.
+
+## 7.10 — Inter, servie par l'application
+
+L'audit a montré une feuille de style bloquante sur `fonts.googleapis.com`. Deux
+sous-ensembles latins (130 Ko) sont désormais servis par l'application et précachés :
+une dépendance tierce de moins, et l'interface garde sa police hors ligne.
+
+## 7.11 — Definition of Done
+
+| Critère                                                  | Résultat                                                          |
+| -------------------------------------------------------- | ----------------------------------------------------------------- |
+| Manifeste et application installable                     | ✅ vérifié sur le build de production                             |
+| Icônes 192/512 + maskable                                | ✅ servies, dimensions vérifiées                                  |
+| Service worker enregistré et actif                       | ✅                                                                |
+| **Un morceau téléchargé se lit en mode avion**           | ✅ lecture **et** déplacement de la tête, réseau réellement coupé |
+| Un morceau non téléchargé ne prétend pas être disponible | ✅ page de repli, aucun bouton de lecture                         |
+| File d'envoi différée                                    | ✅ mise en attente sans réseau, reprise automatique               |
+| Mobile 390 px                                            | ✅ 58 tests E2E dont un format 390 px complet                     |
+
+**Tests** : 61 unitaires (`@stemlab/offline`), 58 E2E sur trois formats.
+
+**Lighthouse** (build de production, mobile 390 px) : performance 97, accessibilité
+100, bonnes pratiques 100, SEO 100.
+
+**Non vérifié**
+
+- **Le score « PWA » ≥ 90 demandé par la spécification** : la catégorie PWA a été
+  retirée de Lighthouse à partir de la version 12. Les critères qu'elle agrégeait
+  sont vérifiés un à un par `e2e/offline.spec.ts`.
+- **L'installation sur Chrome Android et Safari iOS** : aucun appareil ni émulateur
+  ici. À constater avant la mise en production.

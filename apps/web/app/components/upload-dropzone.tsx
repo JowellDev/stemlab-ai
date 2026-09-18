@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, Button, Progress, cn } from '@stemlab/ui'
-import { Loader2, Upload } from 'lucide-react'
+import { CloudUpload, Loader2, Upload, X } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
+import { useUploadQueue } from '~/hooks/use-upload-queue'
 import {
   ACCEPTED_TYPES,
   type UploadPhase,
@@ -23,6 +24,7 @@ interface UploadDropzoneProps {
 }
 
 export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
+  const queue = useUploadQueue(onUploaded)
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,6 +33,25 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
   const [filename, setFilename] = useState<string | null>(null)
 
   const busy = phase !== null && phase !== 'done'
+
+  const defer = useCallback(
+    async (file: File) => {
+      try {
+        await queue.enqueue(file)
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? `Mise en attente impossible : ${cause.message}`
+            : "L'envoi a echoue. Reessayez.",
+        )
+      } finally {
+        setPhase(null)
+        setFilename(null)
+        if (inputRef.current) inputRef.current.value = ''
+      }
+    },
+    [queue],
+  )
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -44,6 +65,13 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
       setFilename(file.name)
       setPercent(0)
 
+      // Sans reseau, inutile de tenter : le fichier part en attente et le
+      // magasin le renverra des le retour de la connexion.
+      if (!navigator.onLine) {
+        await defer(file)
+        return
+      }
+
       try {
         await uploadTrack(file, {
           onProgress: (progress) => {
@@ -53,6 +81,10 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
         })
         onUploaded()
       } catch (cause) {
+        if (isTransient(cause)) {
+          await defer(file)
+          return
+        }
         setError(cause instanceof UploadError ? cause.message : "L'envoi a echoue. Reessayez.")
       } finally {
         setPhase(null)
@@ -60,7 +92,7 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
         if (inputRef.current) inputRef.current.value = ''
       }
     },
-    [onUploaded],
+    [defer, onUploaded],
   )
 
   return (
@@ -132,8 +164,80 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
+
+      {queue.rejected ? (
+        <Alert variant="destructive">
+          <AlertDescription className="flex items-center justify-between gap-3">
+            <span>Un envoi en attente a ete refuse : {queue.rejected}</span>
+            <Button type="button" size="sm" variant="ghost" onClick={queue.dismissRejection}>
+              Fermer
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {queue.items.length > 0 ? (
+        <section
+          aria-label="Envois en attente"
+          data-testid="upload-queue"
+          className="flex flex-col gap-2 rounded-xl border border-input bg-card p-4"
+        >
+          <div className="flex items-center gap-2">
+            <CloudUpload aria-hidden className="size-4 text-muted-foreground" />
+            <p className="text-sm font-medium">
+              {queue.items.length === 1
+                ? '1 envoi en attente de connexion'
+                : `${queue.items.length} envois en attente de connexion`}
+            </p>
+          </div>
+
+          <ul className="flex flex-col gap-1">
+            {queue.items.map((item) => (
+              <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 flex-1 truncate">{item.filename}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {formatBytes(item.bytes)}
+                </span>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={`Annuler l'envoi de ${item.filename}`}
+                  onClick={() => void queue.remove(item.id)}
+                >
+                  <X aria-hidden className="size-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="self-start"
+            disabled={queue.flushing}
+            onClick={() => void queue.retry()}
+          >
+            {queue.flushing ? 'Envoi en cours...' : 'Reessayer maintenant'}
+          </Button>
+        </section>
+      ) : null}
     </section>
   )
+}
+
+/**
+ * Un echec transitoire merite une mise en attente ; un refus, non.
+ *
+ * `fetch` leve un `TypeError` nu quand le reseau tombe en cours de requete :
+ * c'est le cas le plus courant, et il n'a pas de code.
+ */
+function isTransient(cause: unknown): boolean {
+  if (cause instanceof UploadError) {
+    return cause.code === 'upstream_unavailable' || cause.code === 'internal_error'
+  }
+  return cause instanceof TypeError
 }
 
 export { formatBytes }

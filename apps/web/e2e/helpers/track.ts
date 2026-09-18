@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { type Page, expect } from '@playwright/test'
+import { waitForHydration } from './hydration'
 
 /** Extrait de reference : sa grille d'accords est nette et sa duree courte. */
 export const FIXTURE = join(import.meta.dirname, '../../../../fixtures/tracks/ballade.flac')
@@ -28,6 +29,7 @@ export async function signUp(page: Page, prefix?: string): Promise<void> {
 export async function openReadyTrack(page: Page): Promise<void> {
   await signUp(page, 'chords')
 
+  await waitForHydration(page)
   await page.setInputFiles('input[type="file"]', FIXTURE)
   const card = page.getByRole('listitem').filter({ hasText: 'ballade' })
   await expect(card).toBeVisible({ timeout: 60_000 })

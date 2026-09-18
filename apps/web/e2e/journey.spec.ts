@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { readPosition } from './helpers/position'
+import { waitForHydration } from './helpers/hydration'
 
 /**
  * Parcours complet : inscription -> envoi -> traitement -> lecture.
@@ -52,6 +53,7 @@ test('inscription, envoi, traitement puis lecture', async ({ page }) => {
   await expect(page.getByText('Aucun morceau pour le moment.')).toBeVisible()
 
   // --- envoi ---------------------------------------------------------------
+  await waitForHydration(page)
   await page.setInputFiles('input[type="file"]', FIXTURE)
 
   // Le morceau apparait dans la bibliotheque des la mise en file.
@@ -96,6 +98,7 @@ test('un fichier non audio est refuse sans quitter la page', async ({ page }) =>
   await page.getByRole('button', { name: 'Creer mon compte' }).click()
   await expect(page.getByRole('heading', { name: 'Ma bibliotheque' })).toBeVisible()
 
+  await waitForHydration(page)
   await page.setInputFiles('input[type="file"]', {
     name: 'notes.txt',
     mimeType: 'text/plain',
