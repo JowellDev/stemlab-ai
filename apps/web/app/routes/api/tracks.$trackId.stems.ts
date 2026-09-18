@@ -4,6 +4,7 @@ import { db } from '~/lib/db.server'
 import { presignDownload } from '~/lib/s3.server'
 import { requireUserForApi } from '~/lib/session.server'
 import type { Route } from './+types/tracks.$trackId.stems'
+import { parseTrackId } from '~/lib/params.server'
 
 /**
  * URL des stems d'un morceau.
@@ -16,12 +17,15 @@ import type { Route } from './+types/tracks.$trackId.stems'
 export async function loader({ request, params }: Route.LoaderArgs) {
   try {
     const user = await requireUserForApi(request)
+    // La limite passe avant la validation : sinon, marteler des identifiants
+    // malformes contournerait le compteur.
     await enforce('api', identify(request, user.id))
+    const trackId = parseTrackId(params.trackId)
 
     const track = await db.track.findFirst({
       // Le filtre par utilisateur est dans la requete : un morceau d'autrui doit
       // etre introuvable, pas seulement masque.
-      where: { id: params.trackId, userId: user.id, status: 'ready' },
+      where: { id: trackId, userId: user.id, status: 'ready' },
       select: {
         id: true,
         title: true,

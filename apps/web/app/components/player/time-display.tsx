@@ -30,7 +30,7 @@ export function TimeDisplay({ player, duration }: TimeDisplayProps) {
       <span ref={ref} data-testid="playback-position">
         0:00.0
       </span>
-      <span className="text-muted-foreground/70"> / {formatTime(duration)}</span>
+      <span className="text-muted-foreground"> / {formatTime(duration)}</span>
     </p>
   )
 }

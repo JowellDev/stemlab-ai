@@ -8,6 +8,7 @@ import {
 import { db } from '~/lib/db.server'
 import { env } from '~/lib/env.server'
 import type { Route } from './+types/internal.jobs.callback'
+import { logger } from '~/lib/logger.server'
 
 /**
  * Webhook du service ML.
@@ -28,11 +29,13 @@ export async function action({ request }: Route.ActionArgs) {
   })
 
   if (!verification.ok) {
-    console.warn('webhook refuse', { reason: verification.reason })
+    logger.warn('webhook refuse', { reason: verification.reason })
     return Response.json({ code: 'unauthorized', message: 'signature invalide' }, { status: 401 })
   }
 
-  const parsed = JobCallback.safeParse(JSON.parse(raw))
+  // Signature valide ne veut pas dire JSON valide : un corps tronque en cours
+  // de route passerait la verification et ferait echouer l'analyse.
+  const parsed = JobCallback.safeParse(parseJson(raw))
   if (!parsed.success) {
     return Response.json({ code: 'bad_request', message: 'charge invalide' }, { status: 400 })
   }
@@ -185,4 +188,13 @@ async function applySuccess(callback: JobCallbackSuccess): Promise<void> {
       },
     }),
   ])
+}
+
+
+function parseJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
 }

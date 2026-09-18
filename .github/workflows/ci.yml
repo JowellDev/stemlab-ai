@@ -45,6 +45,11 @@ jobs:
 
       - run: pnpm build
 
+      # Un import mal place suffit a expedier un secret au navigateur, sans
+      # qu'aucune compilation ne s'en plaigne.
+      - name: aucun secret dans le bundle client
+        run: pnpm check:bundle
+
   e2e:
     name: end-to-end
     runs-on: ubuntu-latest
