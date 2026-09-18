@@ -179,3 +179,96 @@ test('le pad s utilise au clavier', async ({ page }) => {
   await expect(premier).toHaveAttribute('aria-pressed', 'true')
   await expect.poll(() => countOscillators(page)).toBeGreaterThan(0)
 })
+
+// --- source echantillonnee -------------------------------------------------
+
+/**
+ * La banque n'est pas versionnee : vingt-quatre megaoctets dans l'historique Git
+ * penaliseraient chaque clone. Sans elle, ces tests sont ignores plutot que
+ * rouges — leur echec ne dirait rien du code.
+ */
+async function bankAvailable(page: Page): Promise<boolean> {
+  const response = await page.request.head('/soundfonts/FluidR3Mono_GM.sf3')
+  return response.ok()
+}
+
+test.describe('echantillons', () => {
+  test.slow()
+
+  test('basculer sur les echantillons charge la banque et ses instruments', async ({ page }) => {
+    await openPad(page)
+    test.skip(!(await bankAvailable(page)), 'banque absente : lancer `pnpm soundfont`')
+
+    await page.getByRole('button', { name: 'Echantillons' }).click()
+
+    const instrument = page.getByRole('combobox', { name: /Instrument/i })
+    await expect(instrument).toBeVisible({ timeout: 120_000 })
+    await expect(instrument.getByRole('option')).not.toHaveCount(0)
+  })
+
+  test('un accord echantillonne ne passe pas par les oscillateurs', async ({ page }) => {
+    await openPad(page)
+    test.skip(!(await bankAvailable(page)), 'banque absente : lancer `pnpm soundfont`')
+
+    await page.getByRole('button', { name: 'Echantillons' }).click()
+    await expect(page.getByRole('combobox', { name: /Instrument/i })).toBeVisible({
+      timeout: 120_000,
+    })
+
+    const avant = await countOscillators(page)
+    await grid(page).first().click()
+    await expect(grid(page).first()).toHaveAttribute('aria-pressed', 'true')
+
+    // La preuve que c'est bien la banque qui joue : aucun oscillateur de plus.
+    // Un simple changement d'etat du bouton ne prouverait rien.
+    await page.waitForTimeout(500)
+    expect(await countOscillators(page)).toBe(avant)
+  })
+
+  test('revenir a la synthese refait sonner les oscillateurs', async ({ page }) => {
+    await openPad(page)
+    test.skip(!(await bankAvailable(page)), 'banque absente : lancer `pnpm soundfont`')
+
+    await page.getByRole('button', { name: 'Echantillons' }).click()
+    await expect(page.getByRole('combobox', { name: /Instrument/i })).toBeVisible({
+      timeout: 120_000,
+    })
+    await grid(page).first().click()
+
+    const avant = await countOscillators(page)
+    await page.getByRole('button', { name: 'Synthese' }).click()
+    await grid(page).nth(2).click()
+
+    await expect.poll(() => countOscillators(page)).toBeGreaterThan(avant)
+  })
+
+  test('la douceur ne s applique pas aux echantillons', async ({ page }) => {
+    await openPad(page)
+    test.skip(!(await bankAvailable(page)), 'banque absente : lancer `pnpm soundfont`')
+
+    const douceur = page.getByRole('slider', { name: 'Douceur du fondu' })
+    await expect(douceur).toBeEnabled()
+
+    await page.getByRole('button', { name: 'Echantillons' }).click()
+
+    // Les fondus viennent des enveloppes de la banque : laisser un reglage actif
+    // mais sans effet serait plus trompeur que de le desactiver.
+    await expect(douceur).toBeDisabled()
+  })
+
+  test('le pad echantillonne respecte AA', async ({ page }) => {
+    await openPad(page)
+    test.skip(!(await bankAvailable(page)), 'banque absente : lancer `pnpm soundfont`')
+
+    await page.getByRole('button', { name: 'Echantillons' }).click()
+    await expect(page.getByRole('combobox', { name: /Instrument/i })).toBeVisible({
+      timeout: 120_000,
+    })
+
+    const { violations } = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze()
+
+    expect(violations.map((v) => `${v.id} — ${v.help}`)).toEqual([])
+  })
+})

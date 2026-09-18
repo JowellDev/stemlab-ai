@@ -109,6 +109,9 @@ importers:
       shadcn:
         specifier: ^4.21.0
         version: 4.21.0(typescript@6.0.3)
+      spessasynth_lib:
+        specifier: ^4.3.14
+        version: 4.3.14
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -164,6 +167,9 @@ importers:
       signalsmith-stretch:
         specifier: ^1.3.2
         version: 1.3.2
+      spessasynth_lib:
+        specifier: ^4.3.14
+        version: 4.3.14
     devDependencies:
       '@types/node':
         specifier: ^26.6.1
@@ -5382,6 +5388,12 @@ packages:
     resolution: {integrity: sha512-d8EqvL+k/SOXCreS/SUzg2ciyHqBBLcN/yuRjFsbvVhHTE2pgei7oAhmPM7kWFbkX6OSMQfUq4KbkF3au9lhYQ==}
     engines: {node: '>= 12'}
 
+  spessasynth_core@4.3.22:
+    resolution: {integrity: sha512-qP6NkcZLmTLIs9fCUh2IhZRkd3Junwu8ppD4K0l/0R+Lo4P48d4Rbe8YQ8RlEYyRKFz8HcPM75sXYVQLAb7k4A==}
+
+  spessasynth_lib@4.3.14:
+    resolution: {integrity: sha512-M3In44Erc0OPlbLwOrPoqnMiva0nbh7LCbGfNTi21JV+NMN/B4sun2d8HR17J/dSGp+PEQnJ0ZkujnWEHWfi4Q==}
+
   split2@4.2.0:
     resolution: {integrity: sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg==}
     engines: {node: '>= 10.x'}
@@ -5396,6 +5408,9 @@ packages:
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
+
+  stb-vorbis@0.0.6:
+    resolution: {integrity: sha512-CyvjJEGROIdnuZknwFvdOfMIO1ssUxO2OawsXCR3IlbJ8z2IMBjDe8FDxFJqBfLgf1ZOdqvoHAYx3Xk8q9rbbg==}
 
   std-env@3.10.0:
     resolution: {integrity: sha512-5GS12FdOZNliM5mAOxFRg7Ir0pWz8MdpYm6AY6VPkGpbA7ZzmbzNcBJQ0GPvvyWgcY7QAhCgf9Uy89I03faLkg==}
@@ -11376,6 +11391,14 @@ snapshots:
 
   source-map@0.8.0: {}
 
+  spessasynth_core@4.3.22:
+    dependencies:
+      stb-vorbis: 0.0.6
+
+  spessasynth_lib@4.3.14:
+    dependencies:
+      spessasynth_core: 4.3.22
+
   split2@4.2.0: {}
 
   sqlstring@2.3.3: {}
@@ -11383,6 +11406,8 @@ snapshots:
   stackback@0.0.2: {}
 
   statuses@2.0.2: {}
+
+  stb-vorbis@0.0.6: {}
 
   std-env@3.10.0: {}
 

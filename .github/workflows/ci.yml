@@ -75,6 +75,12 @@ jobs:
       - name: Installer le navigateur Playwright
         run: pnpm --filter @stemlab/web exec playwright install --with-deps chromium
 
+      # La banque d'echantillons n'est pas versionnee : sans elle, les tests du
+      # pad echantillonne s'ignorent au lieu d'echouer. On la recupere pour
+      # qu'ils s'executent vraiment.
+      - name: banque d'echantillons du pad
+        run: pnpm soundfont
+
       - run: pnpm test:e2e
 
       - uses: actions/upload-artifact@v4

@@ -19,6 +19,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
     "services": "bash scripts/dev-services.sh",
+    "soundfont": "node scripts/fetch-soundfont.mjs",
     "db:migrate": "pnpm --filter @stemlab/database migrate",
     "db:generate": "pnpm --filter @stemlab/database generate",
     "db:studio": "pnpm --filter @stemlab/database studio",

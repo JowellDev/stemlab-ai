@@ -35,6 +35,7 @@
     "react-router": "^7.18.4",
     "redis": "^6.2.1",
     "shadcn": "^4.21.0",
+    "spessasynth_lib": "^4.3.14",
     "zod": "^4.6.5"
   },
   "devDependencies": {

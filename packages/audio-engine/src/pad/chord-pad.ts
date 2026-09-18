@@ -1,4 +1,5 @@
-import { createDriveCurve, createReverb } from './reverb.js'
+import { PadEffects } from './effects.js'
+import { createDriveCurve } from './reverb.js'
 import { type Layer, type VoiceSpec, voiceById } from './voices.js'
 
 /**
@@ -48,12 +49,7 @@ const MAX_UNISON = 7
 
 export class ChordPad {
   readonly #context: AudioContext
-  readonly #dry: GainNode
-  readonly #wet: GainNode
-  readonly #master: GainNode
-  readonly #echo: GainNode
-  #reverb: ConvolverNode
-  #echoNodes: AudioNode[] = []
+  readonly #effects: PadEffects
 
   #voice: VoiceSpec
   #smoothness: number
@@ -65,49 +61,7 @@ export class ChordPad {
     this.#context = context
     this.#voice = voiceById(options.voice ?? 'warm')
     this.#smoothness = clamp(options.smoothness ?? 1, MIN_SMOOTHNESS, MAX_SMOOTHNESS)
-
-    // Deux etages de securite, pour deux problemes distincts.
-    //
-    // Le compresseur rattrape les cretes musicales — un accord dense a la
-    // douceur maximale, ou un echo qui s'accumule — en les tassant plutot qu'en
-    // les coupant. Mais un compresseur n'est pas un limiteur : il laisse passer
-    // ce qui arrive plus vite que son temps d'attaque.
-    //
-    // La courbe qui suit, elle, borne mathematiquement la sortie a plus ou moins
-    // un. C'est elle qui garantit l'absence d'ecretage, quelle que soit la
-    // combinaison de reglages.
-    const softClip = context.createWaveShaper()
-    softClip.curve = createDriveCurve(0.08)
-    softClip.oversample = '2x'
-    softClip.connect(context.destination)
-
-    const limiter = context.createDynamicsCompressor()
-    limiter.threshold.value = -4
-    limiter.knee.value = 6
-    limiter.ratio.value = 12
-    limiter.attack.value = 0.004
-    limiter.release.value = 0.25
-    limiter.connect(softClip)
-
-    this.#master = context.createGain()
-    this.#master.gain.value = options.volume ?? 0.7
-    this.#master.connect(limiter)
-
-    this.#dry = context.createGain()
-    this.#dry.connect(this.#master)
-
-    this.#wet = context.createGain()
-    this.#reverb = createReverb(context, this.#voice.reverb)
-    this.#wet.connect(this.#reverb)
-    this.#reverb.connect(this.#master)
-
-    // L'echo est un envoi, pas un insert : il vit hors des accords et continue
-    // de repeter pendant que le suivant monte. C'est precisement ce qui donne sa
-    // continuite a une nappe d'ambiance.
-    this.#echo = context.createGain()
-    this.#buildEcho()
-
-    this.#applyMix()
+    this.#effects = new PadEffects(context, this.#voice, options.volume ?? 0.7)
   }
 
   /** Notes MIDI actuellement tenues. Vide quand le pad se tait. */
@@ -146,17 +100,9 @@ export class ChordPad {
     if (next.id === this.#voice.id) return
 
     this.#voice = next
-
-    // La queue de reverberation appartient au timbre : une nappe de verre ne se
-    // pose pas dans la meme salle qu'un orgue.
-    const reverb = createReverb(this.#context, next.reverb)
-    this.#wet.disconnect()
-    this.#reverb.disconnect()
-    this.#reverb = reverb
-    this.#wet.connect(reverb)
-    reverb.connect(this.#master)
-    this.#buildEcho()
-    this.#applyMix()
+    // La salle et l'echo appartiennent au timbre : une nappe de verre ne se pose
+    // pas dans la meme salle qu'un orgue.
+    this.#effects.setSpec(next)
 
     // Le changement s'entend tout de suite : l'accord en cours est rejoue avec
     // le nouveau timbre, en fondu. Attendre l'accord suivant donnerait
@@ -169,9 +115,7 @@ export class ChordPad {
   }
 
   setVolume(value: number): void {
-    const now = this.#context.currentTime
-    this.#master.gain.cancelScheduledValues(now)
-    this.#master.gain.setTargetAtTime(clamp(value, 0, 1), now, 0.05)
+    this.#effects.setVolume(value)
   }
 
   /** Allonge ou raccourcit l'attaque et la descente, sans changer de timbre. */
@@ -190,81 +134,12 @@ export class ChordPad {
     }
     this.#layers = []
     this.#notes = []
-    for (const node of this.#echoNodes) node.disconnect()
-    this.#echoNodes = []
-    this.#echo.disconnect()
-    this.#master.disconnect()
-    this.#dry.disconnect()
-    this.#wet.disconnect()
-    this.#reverb.disconnect()
+    this.#effects.dispose()
   }
 
   // --- construction d'un accord --------------------------------------------
 
-  /**
-   * Echo stereo alterne, reinjecte sur lui-meme.
-   *
-   * Deux lignes a retard qui se nourrissent l'une l'autre : ce qui sort a
-   * gauche rentre a droite, et inversement. Un passe-bas dans la boucle
-   * assombrit chaque repetition — sans lui, l'echo s'entend comme une
-   * repetition, pas comme un lointain.
-   */
-  #buildEcho(): void {
-    const context = this.#context
-    const spec = this.#voice.delay
 
-    for (const node of this.#echoNodes) node.disconnect()
-    this.#echoNodes = []
-    this.#echo.disconnect()
-
-    if (spec.mix <= 0) return
-
-    const left = context.createDelay(2)
-    const right = context.createDelay(2)
-    left.delayTime.value = spec.time
-    right.delayTime.value = spec.time
-
-    const damping = context.createBiquadFilter()
-    damping.type = 'lowpass'
-    damping.frequency.value = spec.damping
-
-    const feedback = context.createGain()
-    feedback.gain.value = Math.min(0.7, spec.feedback)
-
-    const panLeft = context.createStereoPanner()
-    panLeft.pan.value = -0.85
-    const panRight = context.createStereoPanner()
-    panRight.pan.value = 0.85
-
-    const level = context.createGain()
-    level.gain.value = spec.mix
-
-    this.#echo.connect(left)
-    left.connect(panLeft)
-    left.connect(right)
-    right.connect(panRight)
-    right.connect(damping)
-    damping.connect(feedback)
-    feedback.connect(left)
-
-    panLeft.connect(level)
-    panRight.connect(level)
-    level.connect(this.#master)
-    // L'echo alimente aussi la salle : sans cela, les repetitions sonnent
-    // devant la nappe au lieu d'etre dedans.
-    level.connect(this.#wet)
-
-    this.#echoNodes = [left, right, damping, feedback, panLeft, panRight, level]
-  }
-
-  #applyMix(): void {
-    const now = this.#context.currentTime
-    const mix = this.#voice.reverb.mix
-    this.#wet.gain.setTargetAtTime(mix, now, 0.08)
-    // La part directe ne descend pas a zero : une nappe entierement reverberee
-    // perd son point d'ancrage et semble venir d'ailleurs.
-    this.#dry.gain.setTargetAtTime(1 - mix * 0.45, now, 0.08)
-  }
 
   #buildChord(notes: readonly number[]): Layer_ {
     const context = this.#context
@@ -278,16 +153,16 @@ export class ChordPad {
     // Montee exponentielle : l'oreille percoit le volume en decibels, et une
     // rampe lineaire s'entend comme une arrivee brutale suivie d'un plateau.
     envelope.gain.exponentialRampToValueAtTime(voice.output, now + attack)
-    envelope.connect(this.#dry)
-    envelope.connect(this.#wet)
-    envelope.connect(this.#echo)
+    envelope.connect(this.#effects.input)
+    envelope.connect(this.#effects.reverbInput)
+    envelope.connect(this.#effects.echoInput)
 
     // Les strates reservees a la reverberation ont leur propre enveloppe : elles
     // ne doivent atteindre ni le son direct, ni l'echo.
     const shimmer = context.createGain()
     shimmer.gain.setValueAtTime(0.0001, now)
     shimmer.gain.exponentialRampToValueAtTime(voice.output, now + attack)
-    shimmer.connect(this.#wet)
+    shimmer.connect(this.#effects.reverbInput)
 
     const nodes: AudioScheduledSourceNode[] = []
 

@@ -7,10 +7,11 @@ import {
   diatonicChords,
   pitchClassName,
 } from '@stemlab/music'
-import { Button, Slider, cn } from '@stemlab/ui'
-import { Volume2, VolumeX, Waves } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { useChordPad } from '~/hooks/use-chord-pad'
+import { Alert, AlertDescription, Button, Progress, Slider, cn } from '@stemlab/ui'
+import { Download, Upload, Volume2, VolumeX, Waves } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { useChordPad, type PadSource } from '~/hooks/use-chord-pad'
+import { PAD_PROGRAMS } from '~/lib/pad-programs'
 
 /**
  * Pad d'accords tenus.
@@ -80,8 +81,20 @@ export function ChordPadBoard() {
   const [volume, setVolume] = useState(0.7)
   const [smoothness, setSmoothness] = useState(1)
   const [octave, setOctave] = useState(4)
+  const [source, setSource] = useState<PadSource>('synth')
+  const [program, setProgram] = useState(PAD_PROGRAMS[0]!.value)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  const pad = useChordPad({ voice, volume, smoothness, octave })
+  const pad = useChordPad({ source, voice, volume, smoothness, octave, program })
+  const bank = pad.bank
+  const sampled = source === 'soundfont'
+
+  async function chooseSource(next: PadSource) {
+    setSource(next)
+    // La banque ne se telecharge qu'au moment ou l'on en a besoin : le pad
+    // synthetise, lui, n'a besoin de rien.
+    if (next === 'soundfont' && bank.state !== 'ready') await pad.loadBank()
+  }
   const chords = useMemo(() => diatonicChords(root, mode, colour), [root, mode, colour])
   const accidental = mode === 'minor' ? 'flat' : 'sharp'
   const keyName = `${pitchClassName(root, accidental)} ${mode === 'major' ? 'majeur' : 'mineur'}`
@@ -191,9 +204,113 @@ export function ChordPadBoard() {
 
       {/* --- reglages du son ------------------------------------------------ */}
       <aside className="border-input bg-card flex flex-col gap-5 rounded-xl border p-4">
+        <section className="flex flex-col gap-2" aria-label="Source sonore">
+          <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            Source
+          </h2>
+
+          <div className="flex gap-1.5" role="group" aria-label="Source sonore">
+            <Button
+              type="button"
+              size="sm"
+              variant={!sampled ? 'secondary' : 'ghost'}
+              aria-pressed={!sampled}
+              onClick={() => void chooseSource('synth')}
+            >
+              Synthese
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={sampled ? 'secondary' : 'ghost'}
+              aria-pressed={sampled}
+              onClick={() => void chooseSource('soundfont')}
+            >
+              Echantillons
+            </Button>
+          </div>
+
+          {sampled ? (
+            <div className="flex flex-col gap-2" data-testid="pad-bank">
+              {bank.state === 'loading' ? (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                    <Download aria-hidden className="size-3.5" />
+                    Telechargement de la banque…
+                  </p>
+                  <Progress
+                    value={
+                      bank.progress?.total
+                        ? (bank.progress.loaded / bank.progress.total) * 100
+                        : undefined
+                    }
+                    aria-label="Telechargement de la banque d echantillons"
+                    className="h-1.5"
+                  />
+                  <p className="text-muted-foreground text-xs tabular-nums">
+                    {((bank.progress?.loaded ?? 0) / 1e6).toFixed(1)} Mo
+                    {bank.progress?.total ? ` / ${(bank.progress.total / 1e6).toFixed(1)} Mo` : ''}
+                  </p>
+                </div>
+              ) : null}
+
+              {bank.error ? (
+                <Alert variant="destructive">
+                  <AlertDescription className="text-xs">{bank.error}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              {bank.state === 'ready' ? (
+                <>
+                  <label className="text-muted-foreground text-xs" htmlFor="pad-program">
+                    Instrument
+                  </label>
+                  <select
+                    id="pad-program"
+                    value={program}
+                    onChange={(event) => setProgram(Number(event.target.value))}
+                    className="border-input bg-card focus-visible:ring-brand rounded-lg border px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:outline-none"
+                  >
+                    {PAD_PROGRAMS.map((entry) => (
+                      <option key={entry.value} value={entry.value} title={entry.hint}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : null}
+
+              {/* Une banque personnelle remplace celle fournie : c'est le seul
+                  moyen d'avoir d'autres sons que ceux de la norme General MIDI. */}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="justify-start"
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload aria-hidden className="size-4" />
+                Charger ma banque (.sf2, .sf3)
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".sf2,.sf3,.dls"
+                aria-label="Banque d echantillons personnelle"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) void pad.loadBank(file)
+                  event.target.value = ''
+                }}
+              />
+            </div>
+          ) : null}
+        </section>
+
         <section className="flex flex-col gap-2" aria-label="Timbre">
           <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-            Timbre
+            {sampled ? 'Ambiance' : 'Timbre'}
           </h2>
 
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Choix du timbre">
@@ -219,7 +336,9 @@ export function ChordPadBoard() {
           {/* La description du timbre choisi, plutot que les huit a la fois : on
               lit ce qu'on a sous la main, pas un catalogue. */}
           <p className="text-muted-foreground text-xs leading-relaxed" data-testid="pad-voice-hint">
-            {selectedVoice.description}
+            {sampled
+              ? `Salle et echo empruntes a « ${selectedVoice.name} ». Les sons, eux, viennent de la banque.`
+              : selectedVoice.description}
           </p>
         </section>
 
@@ -241,9 +360,15 @@ export function ChordPadBoard() {
               min={0.4}
               max={2.5}
               step={0.05}
+              disabled={sampled}
               thumbLabel="Douceur du fondu"
               onValueChange={([next]) => setSmoothness(next ?? smoothness)}
             />
+            {sampled ? (
+              <p className="text-muted-foreground text-xs">
+                Les fondus viennent de la banque : ce reglage ne s applique qu a la synthese.
+              </p>
+            ) : null}
           </Control>
 
           <Control label="Registre">
