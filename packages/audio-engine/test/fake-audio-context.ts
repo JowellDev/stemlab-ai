@@ -16,6 +16,8 @@ export class FakeAudioParam {
   value: number
   /** Derniere cible demandee via setTargetAtTime : c'est le gain effectif vise. */
   target: number
+  /** Rampes programmees, dans l'ordre : `[valeur, instant]`. */
+  readonly ramps: Array<[number, number]> = []
 
   constructor(value: number) {
     this.value = value
@@ -27,6 +29,79 @@ export class FakeAudioParam {
   setTargetAtTime(target: number, _startTime: number, _timeConstant: number): void {
     this.target = target
     this.value = target
+  }
+
+  setValueAtTime(value: number, _when: number): void {
+    this.value = value
+  }
+
+  exponentialRampToValueAtTime(value: number, when: number): void {
+    this.ramps.push([value, when])
+    this.target = value
+  }
+
+  linearRampToValueAtTime(value: number, when: number): void {
+    this.ramps.push([value, when])
+    this.target = value
+  }
+}
+
+/**
+ * Oscillateur : ce que le pad cree en quantite.
+ *
+ * On retient de quoi verifier la frequence jouee et le cycle de vie — c'est tout
+ * ce que les tests observent.
+ */
+export class FakeOscillatorNode {
+  type: OscillatorType = 'sine'
+  readonly frequency = new FakeAudioParam(440)
+  readonly detune = new FakeAudioParam(0)
+  readonly connections = new Set<object>()
+  started = false
+  stopped = false
+
+  connect(destination: object): void {
+    this.connections.add(destination)
+  }
+
+  disconnect(): void {
+    this.connections.clear()
+  }
+
+  start(_when?: number): void {
+    this.started = true
+  }
+
+  stop(_when?: number): void {
+    this.stopped = true
+  }
+}
+
+export class FakeBiquadFilterNode {
+  type: BiquadFilterType = 'lowpass'
+  readonly frequency = new FakeAudioParam(350)
+  readonly Q = new FakeAudioParam(1)
+  readonly connections = new Set<object>()
+
+  connect(destination: object): void {
+    this.connections.add(destination)
+  }
+
+  disconnect(): void {
+    this.connections.clear()
+  }
+}
+
+export class FakeConvolverNode {
+  buffer: FakeAudioBuffer | null = null
+  readonly connections = new Set<object>()
+
+  connect(destination: object): void {
+    this.connections.add(destination)
+  }
+
+  disconnect(): void {
+    this.connections.clear()
   }
 }
 
@@ -134,6 +209,9 @@ export class FakeAudioContext {
   readonly createdGains: FakeGainNode[] = []
   readonly createdSplitters: FakeChannelSplitterNode[] = []
   readonly createdMergers: FakeChannelMergerNode[] = []
+  readonly createdOscillators: FakeOscillatorNode[] = []
+  readonly createdFilters: FakeBiquadFilterNode[] = []
+  readonly createdConvolvers: FakeConvolverNode[] = []
   closed = false
 
   constructor(options: { sampleRate?: number } = {}) {
@@ -168,6 +246,24 @@ export class FakeAudioContext {
     return new FakeAudioBuffer(length / sampleRate, sampleRate, channels)
   }
 
+  createOscillator(): FakeOscillatorNode {
+    const oscillator = new FakeOscillatorNode()
+    this.createdOscillators.push(oscillator)
+    return oscillator
+  }
+
+  createBiquadFilter(): FakeBiquadFilterNode {
+    const filter = new FakeBiquadFilterNode()
+    this.createdFilters.push(filter)
+    return filter
+  }
+
+  createConvolver(): FakeConvolverNode {
+    const convolver = new FakeConvolverNode()
+    this.createdConvolvers.push(convolver)
+    return convolver
+  }
+
   async resume(): Promise<void> {
     this.state = 'running'
   }
@@ -180,6 +276,11 @@ export class FakeAudioContext {
   /** Avance l'horloge audio, comme le ferait le materiel. */
   advance(seconds: number): void {
     this.currentTime += seconds
+  }
+
+  /** Oscillateurs demarres et pas encore arretes. */
+  get liveOscillators(): FakeOscillatorNode[] {
+    return this.createdOscillators.filter((o) => o.started && !o.stopped)
   }
 
   /** Sources effectivement demarrees et non arretees. */

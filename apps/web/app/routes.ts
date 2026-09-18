@@ -4,6 +4,7 @@ export default [
   index('routes/home.tsx'),
   route('health', 'routes/health.ts'),
   route('metrics', 'routes/metrics.ts'),
+  route('legal', 'routes/legal.tsx'),
   route('dev/player', 'routes/dev.player.tsx'),
   route('dev/drift', 'routes/dev.drift.tsx'),
 
@@ -15,6 +16,7 @@ export default [
 
   // Pages accessibles une fois connecte.
   route('library', 'routes/dashboard/library.tsx'),
+  route('pad', 'routes/dashboard/pad.tsx'),
   route('tracks/:trackId', 'routes/dashboard/track.$trackId.tsx'),
 
   // Surface d'API : regroupee sous routes/api/ pour que la separation entre les

@@ -1,4 +1,19 @@
 export {
+  CHORD_INTERVALS,
+  MIDDLE_C,
+  chordLabel,
+  chordNotes,
+  diatonicChords,
+  midiToFrequency,
+  type ChordColour,
+  type ChordFunction,
+  type ChordQuality,
+  type DiatonicChord,
+  type Mode,
+  type VoicingOptions,
+} from './harmony.js'
+
+export {
   accidentalForKey,
   normalizePitchClass,
   pitchClassIndex,

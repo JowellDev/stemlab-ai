@@ -36,6 +36,20 @@ export function AppShell({ user, children }: AppShellProps) {
               Ma bibliotheque
             </NavLink>
 
+            <NavLink
+              to="/pad"
+              className={({ isActive }) =>
+                cn(
+                  'rounded-md px-3 py-1.5 transition-colors',
+                  isActive
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )
+              }
+            >
+              Pad
+            </NavLink>
+
             <Form method="post" action="/logout">
               <button
                 type="submit"
@@ -51,6 +65,15 @@ export function AppShell({ user, children }: AppShellProps) {
       </header>
 
       {children}
+
+      <footer className="border-border mt-auto border-t">
+        <div className="text-muted-foreground mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs sm:px-6">
+          <p>Usage strictement personnel. Vos fichiers restent prives.</p>
+          <Link to="/legal" className="hover:text-foreground transition-colors">
+            Conditions d&apos;utilisation
+          </Link>
+        </div>
+      </footer>
     </div>
   )
 }
