@@ -52,6 +52,11 @@ test('inscription, envoi, traitement puis lecture', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Ma bibliotheque' })).toBeVisible()
   await expect(page.getByText('Aucun morceau pour le moment.')).toBeVisible()
 
+  // Le quota est annonce avant qu'on s'y heurte, pas au moment du refus.
+  const quota = page.getByTestId('quota-meter')
+  await expect(quota).toContainText('5 morceaux restants ce mois-ci')
+  await expect(quota).toContainText('0 / 5')
+
   // --- envoi ---------------------------------------------------------------
   await waitForHydration(page)
   await page.setInputFiles('input[type="file"]', FIXTURE)
@@ -59,6 +64,7 @@ test('inscription, envoi, traitement puis lecture', async ({ page }) => {
   // Le morceau apparait dans la bibliotheque des la mise en file.
   const card = page.getByRole('listitem').filter({ hasText: 'electro' })
   await expect(card).toBeVisible({ timeout: 60_000 })
+  await expect(quota).toContainText('1 / 5')
 
   // --- traitement ----------------------------------------------------------
   // L'etat passe a « Pret » sans rechargement : c'est le flux SSE qui le pousse.

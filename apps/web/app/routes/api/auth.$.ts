@@ -1,4 +1,6 @@
 import { auth } from '~/lib/auth.server'
+import { toErrorResponse } from '~/lib/errors.server'
+import { enforce, identify } from '~/lib/rate-limit.server'
 import type { Route } from './+types/auth.$'
 
 /**
@@ -9,6 +11,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   return auth.handler(request)
 }
 
+/**
+ * Les ecritures passent par une limite de debit : c'est ici qu'aboutit le
+ * bourrage d'identifiants. La limite porte sur l'adresse, seule identite
+ * disponible avant que la session n'existe.
+ */
 export async function action({ request }: Route.ActionArgs) {
-  return auth.handler(request)
+  try {
+    await enforce('auth', identify(request))
+    return await auth.handler(request)
+  } catch (error) {
+    return toErrorResponse(error)
+  }
 }

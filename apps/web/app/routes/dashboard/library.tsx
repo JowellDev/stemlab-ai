@@ -11,6 +11,8 @@ import { useTrackEvents } from '~/hooks/use-track-events'
 import { db } from '~/lib/db.server'
 import { requireUser } from '~/lib/session.server'
 import type { Route } from './+types/library'
+import { usageFor } from '~/lib/quota.server'
+import { QuotaMeter } from '~/components/quota-meter'
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: 'Ma bibliotheque — STEMLAB' }, { name: 'robots', content: 'noindex' }]
@@ -39,6 +41,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     user,
+    quota: await usageFor(user.id, user.plan),
     tracks: tracks.map((track): TrackSummary => ({
       id: track.id,
       title: track.title,
@@ -58,7 +61,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function Library({ loaderData }: Route.ComponentProps) {
-  const { user, tracks } = loaderData
+  const { user, quota, tracks } = loaderData
   const revalidator = useRevalidator()
   const [deleting, setDeleting] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState<string | null>(null)
@@ -141,6 +144,8 @@ export default function Library({ loaderData }: Route.ComponentProps) {
         </header>
 
         <InstallBanner />
+
+        <QuotaMeter quota={quota} />
 
         <UploadDropzone onUploaded={() => void revalidator.revalidate()} />
 

@@ -150,6 +150,9 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
         <input
           ref={inputRef}
           type="file"
+          // Le champ est masque et declenche par le bouton voisin : sans nom
+          // propre, un lecteur d'ecran qui l'atteint ne sait pas ce qu'il est.
+          aria-label="Fichier audio a envoyer"
           accept={ACCEPTED_TYPES}
           className="sr-only"
           onChange={(event) => {

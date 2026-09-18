@@ -1063,3 +1063,170 @@ une dépendance tierce de moins, et l'interface garde sa police hors ligne.
   sont vérifiés un à un par `e2e/offline.spec.ts`.
 - **L'installation sur Chrome Android et Safari iOS** : aucun appareil ni émulateur
   ici. À constater avant la mise en production.
+
+---
+
+# Phase 8 — Durcissement
+
+## 8.1 — Les quotas comptent le calcul, pas le stockage
+
+Le plan gratuit permet cinq morceaux par mois et quatre pistes ; le plan payé
+lève la limite et ouvre la séparation en six pistes.
+
+Le comptage porte sur les morceaux **créés** dans le mois, pas sur ceux présents.
+Supprimer un morceau ne rend pas son crédit : autrement la limite ne limiterait
+que le stockage, alors que c'est le calcul — quelques minutes de CPU ou de GPU —
+qui coûte. À l'inverse, redéposer un fichier déjà connu ne consomme rien,
+puisqu'il ne relance aucun calcul.
+
+La consommation est affichée en permanence sous le sélecteur de fichier. Une
+limite qu'on découvre en s'y heurtant passe pour une panne.
+
+## 8.2 — Une fenêtre fixe, dans Redis
+
+La limitation de débit utilise une fenêtre fixe : deux commandes Redis, aucun
+état à maintenir, et un comportement explicable en une phrase. Son défaut connu
+— jusqu'à deux fois la limite à cheval sur deux fenêtres — est sans conséquence
+quand il s'agit d'écarter des abus plutôt que de facturer à l'appel près.
+
+Le compteur vit dans Redis parce que l'application tournera en plusieurs
+instances : un compteur local diviserait silencieusement la limite par le nombre
+de machines. Quand Redis ne répond pas, la limitation retombe sur un compteur
+local et **laisse passer** : une protection qui tombe en panne ne doit pas fermer
+le service qu'elle protège.
+
+L'identité limitée est l'utilisateur quand il est connu, l'adresse sinon. Limiter
+par adresse seule punirait tout un réseau d'entreprise pour un seul abus.
+
+## 8.3 — Trois pièges d'une politique de contenu
+
+La CSP est nominative — un `nonce` par requête — plutôt que permissive : un
+`'unsafe-inline'` sur les scripts rendrait la directive décorative, puisque c'est
+exactement ce qu'exploite une injection. Trois obstacles, tous instructifs.
+
+**Un nonce annule `'unsafe-inline'`.** En développement, Vite injecte ses propres
+scripts en ligne ; la politique les acceptait en théorie et les bloquait en
+pratique, parce que le navigateur ignore `'unsafe-inline'` dès qu'un nonce est
+présent. Le développement renonce donc au nonce plutôt que d'ajouter les deux.
+
+**Les scripts de flux échappent à `<Scripts>`.** React Router émet ses données
+d'hydratation dans des balises `<script>` produites par le rendu en flux, pas par
+le composant `<Scripts>`. Sans `entry.server` pour leur passer le nonce, la page
+se chargeait sans jamais s'hydrater — et le service worker ne s'enregistrait pas.
+
+**Le nonce ne voyage pas par la requête.** Premier réflexe : une table indexée
+par `Request`, remplie dans le middleware, lue par le chargeur. Elle rendait
+toujours vide — React Router ne transmet pas au chargeur l'instance que le
+middleware a vue. Le nonce passe donc par le contexte asynchrone, qui traverse
+tout l'arbre.
+
+Une concession assumée : `blob:` dans `script-src`. L'AudioWorklet d'étirement
+est compilé à la volée et chargé depuis un blob, et un module de worklet relève
+de `script-src`, pas de `worker-src`. Seul du script déjà exécuté sur l'origine
+peut fabriquer un blob : la porte n'est pas nouvelle.
+
+## 8.4 — Journal, métriques, remontée d'erreurs
+
+Une ligne JSON par événement en production, lisible à l'œil ailleurs. Le contexte
+de requête — identifiant, chemin, utilisateur une fois la session résolue — passe
+par un stockage asynchrone : sans cela, chaque fonction du chemin devrait porter
+un identifiant dont elle n'a que faire. Chaque réponse porte son `x-request-id`,
+donc chaque incident remonte à sa ligne.
+
+`/metrics` expose une dizaine de séries au format Prometheus, protégées par un
+jeton — elles décrivent le trafic et le nombre de comptes. Sans jeton configuré,
+la route n'existe qu'en développement : mieux vaut une métrique manquante qu'une
+fuite silencieuse.
+
+Sentry est inerte sans DSN. Son instrumentation automatique n'est pas activée :
+elle exige d'être chargée avant tout le reste, ce que le serveur de React Router
+ne permet pas sans réécrire son point d'entrée.
+
+## 8.5 — Trois manquements d'accessibilité, trouvés et corrigés
+
+Axe passe sur quatre pages avec les règles WCAG 2.1 AA. L'analyse automatique ne
+prouve pas qu'une interface est utilisable, mais elle attrape sans discussion ce
+qui se mesure. Elle a trouvé :
+
+- le champ fichier, masqué et déclenché par un bouton voisin, n'avait **aucun nom
+  accessible** — un lecteur d'écran qui l'atteignait ne savait pas ce que c'était ;
+- la durée affichée dans le transport, à 70 % d'opacité, tombait **sous le seuil
+  de contraste AA** ;
+- la liste de définitions de l'analyse contenait des **séparateurs** : un
+  `role="separator"` entre deux paires en casse la lecture. Ils sont désormais
+  dessinés en bordure.
+
+Le reste — atteindre le dépôt de fichier à la tabulation, piloter le transport au
+clavier — est vérifié à la main, parce qu'aucun analyseur ne le mesure.
+
+## 8.6 — Sauvegardes : séparer ce qui se vérifie de ce qui ne se vérifie pas
+
+`pg_dump` n'existe pas sur ce poste. La distribution PostgreSQL embarquée ne
+livre que le serveur, et quatre tentatives d'installation en espace utilisateur
+ont buté sur une cascade de bibliothèques partagées.
+
+Plutôt que de déclarer la sauvegarde « écrite mais non vérifiée », elle est
+**coupée en deux**. Le dump reste l'affaire de `pg_dump`, dans un script shell
+avec `pipefail` — sans lui, un dump qui échoue laisserait passer un flux vide et
+la sauvegarde serait déclarée réussie. Le dépôt et la rétention, eux — la partie
+où l'on perd réellement des données si l'on se trompe — sont un script Node qui
+lit l'entrée standard, et qui a été exécuté pour de bon contre le stockage objet.
+
+La rétention ne supprime **jamais** la dernière sauvegarde. Sans cela, une panne
+de sauvegarde prolongée se transformerait en perte de sauvegarde.
+
+## 8.7 — La rétention S3 cherchait au mauvais endroit
+
+Le nettoyage des objets orphelins parcourait `tracks/<id>/`. La convention réelle
+est `users/<userId>/tracks/<id>/`. La première version ne trouvait donc que des
+restes d'une phase antérieure — qu'elle a supprimés, à juste titre, mais pour la
+mauvaise raison.
+
+Corrigée, elle a été vérifiée dans les deux sens : **34 orphelins réels** trouvés
+et supprimés, **1680 objets légitimes** laissés intacts.
+
+## 8.8 — Chercher les valeurs, pas les noms
+
+Un vérificateur parcourt le bundle client à la recherche des secrets. Première
+version : chercher les **noms** de variables. Elle signalait aussitôt
+`BETTER_AUTH_SECRET` — dans un accesseur d'environnement de better-auth qui cite
+tous les noms possibles sans jamais porter de valeur.
+
+Il cherche donc les **valeurs**, plus quelques témoins propres à nos modules
+serveur — les messages de validation de `env.server.ts`, qui n'existent nulle part
+ailleurs. Si l'un d'eux apparaît, c'est qu'un module serveur entier a suivi un
+import jusqu'au navigateur. Validé par contrôle négatif : un secret planté dans un
+fichier du build est détecté.
+
+## 8.9 — Definition of Done
+
+| Critère                                   | Résultat                                                      |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| Limitation de débit                       | ✅ Redis, repli local, `Retry-After` — vérifié par test       |
+| Quotas par plan                           | ✅ 5 morceaux/mois et 4 pistes en gratuit, affiché en continu |
+| Erreurs typées de bout en bout            | ✅ `StemlabError` → code, statut, champs                      |
+| Sentry                                    | ✅ câblé, inerte sans DSN — **DSN manquant, voir ci-dessous** |
+| Journaux structurés                       | ✅ JSON + identifiant de requête propagé                      |
+| `/metrics`                                | ✅ format Prometheus, protégé par jeton                       |
+| Sauvegardes PostgreSQL quotidiennes       | ⚠️ dépôt et rétention vérifiés, `pg_dump` non exécutable ici  |
+| Rétention S3                              | ✅ vérifiée dans les deux sens sur données réelles            |
+| Accessibilité clavier et contraste AA     | ✅ axe sur 4 pages + parcours clavier, 3 défauts corrigés     |
+| CSP                                       | ✅ nominative par nonce, vérifiée sur le build de production  |
+| Validation Zod aux frontières             | ✅ corps **et** identifiants d'URL                            |
+| Signature du webhook strictement vérifiée | ✅ sur le corps brut, avant désérialisation                   |
+| Aucun secret dans le bundle client        | ✅ vérificateur en CI, validé par contrôle négatif            |
+
+**Tests** : 80 E2E sur trois formats, dont onze consacrés au durcissement et à
+l'accessibilité.
+
+**Non vérifié**
+
+- **Le dump PostgreSQL lui-même** : `pg_dump` n'est pas installable sur ce poste.
+  La commande exacte est dans `scripts/backup-database.sh` ; à exécuter une fois
+  sur une machine équipée avant la mise en production.
+- **La remontée vers Sentry** : le DSN est un secret que je n'ai pas. Le câblage
+  est en place et sans effet tant que `SENTRY_DSN` est vide.
+- **Un échec intermittent du test hors-ligne**, sous charge machine : le
+  navigateur refuse l'écriture pour place insuffisante alors que le quota annoncé
+  est de 2 Gio. Le test porte désormais les chiffres du stockage dans son message
+  d'échec, faute d'avoir pu reproduire la panne à la demande.

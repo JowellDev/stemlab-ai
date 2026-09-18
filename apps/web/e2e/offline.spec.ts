@@ -74,10 +74,15 @@ test('un morceau telecharge se lit en mode avion', async ({ page, context }) => 
   await waitForController(page)
 
   // --- telechargement ------------------------------------------------------
+  const before = await estimate(page)
   await page.getByRole('button', { name: /Rendre .* disponible hors connexion/ }).click()
-  await expect(page.getByRole('button', { name: /disponible hors connexion — retirer/ })).toBeVisible(
-    { timeout: 120_000 },
-  )
+
+  // Le quota du navigateur est joint a l'echec : sans lui, un refus pour place
+  // insuffisante ne se distingue pas d'un telechargement qui n'a jamais demarre.
+  await expect(
+    page.getByRole('button', { name: /disponible hors connexion — retirer/ }),
+    `stockage avant telechargement : ${before}`,
+  ).toBeVisible({ timeout: 120_000 })
 
   // Les stems sont bien dans le stockage local, pas seulement en cache HTTP.
   expect(await storedTrackCount(page)).toBe(1)
@@ -155,6 +160,13 @@ test('un envoi lance sans reseau repart au retour de la connexion', async ({ pag
 })
 
 // --- utilitaires -----------------------------------------------------------
+
+/** Quota et occupation du stockage, en clair, pour les messages d'echec. */
+async function estimate(page: Page): Promise<string> {
+  const { quota, usage } = await page.evaluate(() => navigator.storage.estimate())
+  const mo = (bytes: number | undefined) => `${((bytes ?? 0) / 1024 / 1024).toFixed(1)} Mo`
+  return `${mo(usage)} occupes sur ${mo(quota)}`
+}
 
 async function waitForController(page: Page): Promise<void> {
   await expect
