@@ -1,4 +1,5 @@
 import { toErrorResponse } from '~/lib/errors.server'
+import { enforce, identify } from '~/lib/rate-limit.server'
 import { db } from '~/lib/db.server'
 import { presignDownload } from '~/lib/s3.server'
 import { requireUserForApi } from '~/lib/session.server'
@@ -15,6 +16,7 @@ import type { Route } from './+types/tracks.$trackId.stems'
 export async function loader({ request, params }: Route.LoaderArgs) {
   try {
     const user = await requireUserForApi(request)
+    await enforce('api', identify(request, user.id))
 
     const track = await db.track.findFirst({
       // Le filtre par utilisateur est dans la requete : un morceau d'autrui doit

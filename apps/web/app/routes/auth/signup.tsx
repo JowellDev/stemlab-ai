@@ -8,6 +8,7 @@ import { safeRedirect } from '~/lib/redirect.server'
 import { getUser } from '~/lib/session.server'
 import { signIn } from '~/lib/auth-client'
 import type { Route } from './+types/signup'
+import { enforce, identify, rateLimitMessage } from '~/lib/rate-limit.server'
 
 const MIN_PASSWORD_LENGTH = 10
 
@@ -58,6 +59,15 @@ export async function action({ request }: Route.ActionArgs) {
       errors[field] ??= issue.message
     }
     return { errors, formError: null }
+  }
+
+  // La limite est appliquee apres la validation du formulaire : une saisie
+  // manifestement incomplete ne doit pas consommer le credit d'un voisin
+  // derriere la meme adresse.
+  try {
+    await enforce('auth', identify(request))
+  } catch (error) {
+    return { errors: {} as FieldErrors, formError: rateLimitMessage(error) }
   }
 
   const outcome = await signUpWithEmail(parsed.data)

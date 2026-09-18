@@ -1,5 +1,6 @@
 import { StemlabError, UploadCompleteRequest } from '@stemlab/contracts'
 import { toErrorResponse } from '~/lib/errors.server'
+import { enforce, identify } from '~/lib/rate-limit.server'
 import { requireUserForApi } from '~/lib/session.server'
 import { completeUpload } from '~/lib/tracks.server'
 import type { Route } from './+types/upload.complete'
@@ -8,6 +9,7 @@ import type { Route } from './+types/upload.complete'
 export async function action({ request }: Route.ActionArgs) {
   try {
     const user = await requireUserForApi(request)
+    await enforce('upload', identify(request, user.id))
     const parsed = UploadCompleteRequest.safeParse(await request.json())
 
     if (!parsed.success) {

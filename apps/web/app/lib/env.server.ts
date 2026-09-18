@@ -45,6 +45,8 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL est requis'),
+  /** Sert la limitation de debit. Vide : la limitation reste locale a l'instance. */
+  REDIS_URL: z.string().default(''),
 
   S3_ENDPOINT: z.string().default(''),
   S3_REGION: z.string().default('us-east-1'),
@@ -70,6 +72,13 @@ const EnvSchema = z.object({
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(104_857_600),
 
   SENTRY_DSN: z.string().default(''),
+  /** Protege `/metrics`. Vide : la route n'existe qu'en developpement. */
+  METRICS_TOKEN: z.string().default(''),
+
+  /** Limites de debit, par minute. Relevees en test, ou tout vient d'une seule adresse. */
+  RATE_LIMIT_AUTH: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_UPLOAD: z.coerce.number().int().positive().default(20),
+  RATE_LIMIT_API: z.coerce.number().int().positive().default(240),
 })
 
 export type Env = z.infer<typeof EnvSchema>

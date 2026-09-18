@@ -1,6 +1,7 @@
 import { redirect } from 'react-router'
 import { auth } from './auth.server'
 import { db } from './db.server'
+import { tagUser } from '~/lib/logger.server'
 
 export interface SessionUser {
   id: string
@@ -22,6 +23,9 @@ export async function getUser(request: Request): Promise<SessionUser | null> {
     select: { id: true, name: true, email: true, image: true, plan: true },
   })
   if (!user) return null
+
+  // Toutes les lignes de journal de cette requete porteront desormais l'auteur.
+  tagUser(user.id)
 
   return { ...user, plan: user.plan }
 }

@@ -18,6 +18,7 @@ import {
   trackStemsPrefix,
 } from './s3.server'
 import type { SessionUser } from './session.server'
+import { assertCanAddTrack, assertCanUseModel } from '~/lib/quota.server'
 
 /**
  * Regles metier des morceaux.
@@ -52,12 +53,17 @@ export async function initUpload(
     throw new StemlabError('payload_too_large', 'Le fichier depasse la taille maximale de 100 Mo.')
   }
 
+  assertCanUseModel(user.plan, input.model)
+
   const existing = await db.track.findUnique({
     where: {
       userId_checksum_model: { userId: user.id, checksum: input.checksum, model: input.model },
     },
     select: { id: true, status: true },
   })
+
+  // Un fichier deja connu ne relance aucun calcul : il ne consomme pas de credit.
+  await assertCanAddTrack(user.id, user.plan, { existingTrackId: existing?.id ?? null })
 
   if (existing && existing.status !== 'failed') {
     return {

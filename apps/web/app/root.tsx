@@ -1,6 +1,15 @@
-import { Links, Meta, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse } from 'react-router'
+import {
+  Links,
+  Meta,
+  Outlet,
+  Scripts,
+  ScrollRestoration,
+  isRouteErrorResponse,
+  useRouteLoaderData,
+} from 'react-router'
 import { useEffect } from 'react'
 import { registerServiceWorker } from '~/lib/register-sw.client'
+import { currentNonce, observability } from '~/lib/middleware.server'
 import type { Route } from './+types/root'
 import './app.css'
 
@@ -16,7 +25,28 @@ export const links: Route.LinksFunction = () => [
   { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
 ]
 
+/**
+ * Traversee appliquee a toutes les requetes : identifiant, journal, en-tetes de
+ * securite. Declaree sur la racine, elle couvre l'ensemble de l'arbre.
+ */
+export const middleware: Route.MiddlewareFunction[] = [observability]
+
+/**
+ * Le nonce voyage par les donnees de la racine.
+ *
+ * Il doit etre identique dans l'en-tete et dans les balises `<script>` : le
+ * transmettre par le chargeur est le seul moyen pour que le serveur et le
+ * client s'accordent, et donc que l'hydratation ne le voie pas changer.
+ */
+export function loader(_args: Route.LoaderArgs) {
+  return { nonce: currentNonce() ?? null }
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
+  // `Layout` habille aussi la frontiere d'erreur, ou les donnees de la racine
+  // peuvent manquer : le nonce est alors vide, et la page reste lisible sans script.
+  const nonce = useRouteLoaderData<typeof loader>('root')?.nonce ?? undefined
+
   return (
     <html lang="fr" className="dark">
       <head>
@@ -33,8 +63,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body className="min-h-dvh">
         {children}
-        <ScrollRestoration />
-        <Scripts />
+        <ScrollRestoration nonce={nonce} />
+        <Scripts nonce={nonce} />
       </body>
     </html>
   )

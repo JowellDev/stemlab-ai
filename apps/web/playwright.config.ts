@@ -13,9 +13,24 @@ const DEV_URL = `http://127.0.0.1:${DEV_PORT}`
 const PWA_PORT = 3200
 const PWA_URL = `http://127.0.0.1:${PWA_PORT}`
 
+/**
+ * Limites de debit relevees pour les tests.
+ *
+ * Toute la suite part d'une seule adresse : la limite d'authentification de
+ * production — dix par minute — bloquerait la dizaine de comptes que les tests
+ * creent. `RATE_LIMIT_API` reste bas a dessein : il porte sur l'utilisateur, et
+ * un test dedie doit pouvoir l'atteindre sans tirer des centaines de requetes.
+ */
+const RATE_LIMITS = {
+  RATE_LIMIT_AUTH: '500',
+  RATE_LIMIT_UPLOAD: '500',
+  RATE_LIMIT_API: '30',
+}
+
 const SERVER_ENV = {
   APP_URL: DEV_URL,
   BETTER_AUTH_URL: DEV_URL,
+  ...RATE_LIMITS,
 }
 
 export default defineConfig({
@@ -72,7 +87,7 @@ export default defineConfig({
     {
       command: `pnpm build && PORT=${PWA_PORT} pnpm start`,
       url: `${PWA_URL}/health`,
-      env: { APP_URL: PWA_URL, BETTER_AUTH_URL: PWA_URL },
+      env: { APP_URL: PWA_URL, BETTER_AUTH_URL: PWA_URL, ...RATE_LIMITS },
       reuseExistingServer: !process.env.CI,
       timeout: 240_000,
     },
