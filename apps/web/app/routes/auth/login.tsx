@@ -83,7 +83,7 @@ export default function Connexion({ loaderData, actionData }: Route.ComponentPro
       subtitle={
         <>
           Pas encore de compte ?{' '}
-          <Link to="/inscription" className="text-brand underline underline-offset-4">
+          <Link to="/signup" className="text-brand underline underline-offset-4">
             En creer un
           </Link>
         </>
