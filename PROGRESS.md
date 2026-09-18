@@ -10,7 +10,7 @@
 | 5     | Accords, tonalité, tempo   | ⏳ à venir  | —          | —                                                                            |
 | 6     | Pitch et tempo             | ⏳ à venir  | —          | —                                                                            |
 | 7     | PWA et hors-ligne          | ✅ terminée | 2026-09-18 | Installation Chrome Android / Safari iOS non constatée (aucun appareil ici)  |
-| 8     | Durcissement               | ⏳ à venir  | —          | —                                                                            |
+| 8     | Durcissement               | ✅ terminée | 2026-09-18 | `pg_dump` non exécutable ici ; DSN Sentry manquant (voir DECISIONS.md)       |
 | 9     | Paroles et traduction      | ⏳ à venir  | —          | Insérée à la demande, avant la mise en production                            |
 | 10    | Production                 | ⏳ à venir  | —          | Anciennement phase 9                                                         |
 
@@ -257,3 +257,37 @@ accessibilité 100, bonnes pratiques 100, SEO 100.
 
 **Feuille de route modifiée.** Les paroles et leur traduction passent en phase 9, à la
 demande, avant la mise en production qui devient la phase 10.
+
+---
+
+## Phase 8 — Durcissement (2026-09-18)
+
+**Definition of Done — vérifiée par exécution**
+
+| Critère                                   | Vérification                                                   |
+| ----------------------------------------- | -------------------------------------------------------------- |
+| Limitation de débit                       | ✅ Redis + repli local, `Retry-After` — refus vérifié par test |
+| Quotas par plan                           | ✅ 5 morceaux/mois, 4 pistes en gratuit ; affichés en continu  |
+| Erreurs typées de bout en bout            | ✅ code, statut et champs traversent HTTP                      |
+| Journaux structurés                       | ✅ JSON + `x-request-id` sur chaque réponse                    |
+| `/metrics`                                | ✅ format Prometheus, protégé par jeton                        |
+| Rétention S3                              | ✅ 34 orphelins réels supprimés, 1680 objets légitimes intacts |
+| Accessibilité AA et clavier               | ✅ axe sur 4 pages, 3 défauts réels corrigés                   |
+| CSP                                       | ✅ nominative par nonce, vérifiée sur le build de production   |
+| Validation Zod aux frontières             | ✅ corps **et** identifiants d'URL                             |
+| Signature du webhook strictement vérifiée | ✅ sur le corps brut, avant désérialisation                    |
+| Aucun secret dans le bundle client        | ✅ vérificateur en CI, validé par contrôle négatif             |
+
+**Tests** : 80 E2E sur trois formats, dont onze de durcissement et d'accessibilité.
+
+**Non vérifié**
+
+- **Le dump PostgreSQL** : `pg_dump` n'est pas installable sur ce poste — quatre
+  approches distinctes ont échoué. Le dépôt et la rétention, eux, ont été exécutés
+  pour de bon contre le stockage objet. La commande de dump est dans
+  `scripts/backup-database.sh` ; à exécuter une fois sur une machine équipée.
+- **La remontée vers Sentry** : le DSN est un secret que je n'ai pas. Le câblage
+  est en place et reste sans effet tant que `SENTRY_DSN` est vide.
+- **Un échec intermittent du test hors-ligne** sous charge machine : le navigateur
+  refuse l'écriture pour place insuffisante alors qu'il annonce 2 Gio de quota. Le
+  test porte désormais les chiffres du stockage dans son message d'échec.

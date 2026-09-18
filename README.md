@@ -238,6 +238,58 @@ classiques — le tempo déplace alors aussi la hauteur, et l'interface le signa
 
 ---
 
+## Sécurité et exploitation
+
+**Quotas.** Le plan gratuit permet cinq morceaux par mois et quatre pistes ; le
+plan payé lève la limite et ouvre la séparation en six pistes. Le compteur porte
+sur les morceaux **créés** dans le mois : supprimer un morceau ne rend pas son
+crédit, puisque c'est le calcul qui coûte, pas le stockage. La consommation est
+affichée en permanence, plutôt que révélée au moment du refus.
+
+**Limitation de débit.** Fenêtre fixe dans Redis, partagée entre instances, avec
+repli local quand Redis ne répond pas. L'identité limitée est l'utilisateur quand
+il est connu, l'adresse sinon. Les refus portent un `Retry-After`.
+
+| Compartiment | Par défaut   | Portée      |
+| ------------ | ------------ | ----------- |
+| `auth`       | 10 / minute  | adresse     |
+| `upload`     | 20 / minute  | utilisateur |
+| `api`        | 240 / minute | utilisateur |
+
+**Politique de contenu.** Nominative par `nonce`, sans `'unsafe-inline'` sur les
+scripts. Les en-têtes de sécurité sont posés par un middleware racine, donc aussi
+sur les requêtes de données et les routes de ressources.
+
+> **Piège connu.** Un navigateur ignore `'unsafe-inline'` dès qu'un `nonce` est
+> présent, et les scripts de flux de React Router n'émanent pas de `<Scripts>` :
+> ils exigent un `entry.server`. Voir `DECISIONS.md`.
+
+**Observabilité.** Une ligne JSON par requête en production, avec un identifiant
+propagé et renvoyé dans `x-request-id`. `/metrics` expose une dizaine de séries au
+format Prometheus, protégées par `METRICS_TOKEN` — sans jeton, la route n'existe
+qu'en développement. Sentry est câblé et inerte tant que `SENTRY_DSN` est vide.
+
+**Exploitation.**
+
+```bash
+# sauvegarde : le dump traverse le tube jusqu'au stockage, jamais le disque
+DATABASE_URL=… ./scripts/backup-database.sh
+node scripts/backup-store.mjs --list
+node scripts/backup-store.mjs --prune
+
+# objets sans morceau correspondant — sans effet tant que --apply est absent
+node scripts/prune-orphans.mjs
+node scripts/prune-orphans.mjs --apply
+
+# aucun secret n'a suivi un import jusqu'au navigateur
+pnpm build && pnpm check:bundle
+```
+
+La rétention ne supprime jamais la dernière sauvegarde : une panne de sauvegarde
+prolongée deviendrait sinon une perte de sauvegarde.
+
+---
+
 ## Hors-ligne et installation
 
 L'application s'installe depuis le navigateur et fonctionne sans réseau pour les

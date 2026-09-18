@@ -970,3 +970,98 @@ explicite avant d'engager le travail.
   registre. Efficace quand les deux guitares sont panoramisées de part et d'autre,
   inopérante quand elles sont au centre. Utile, mais à présenter comme tel — pas
   comme une séparation.
+
+---
+
+## 2026-09-18 — Le quota compte les morceaux créés, pas ceux conservés
+
+**Décision.** Le compteur mensuel s'incrémente à la création d'un morceau et ne
+se décrémente jamais. Supprimer un morceau ne rend pas son crédit.
+
+**Pourquoi.** Ce qui coûte, c'est la séparation — quelques minutes de calcul —
+pas les mégaoctets conservés. Un compteur qui suit le stockage se contourne en
+supprimant chaque morceau après l'avoir écouté.
+
+**Corollaire.** Redéposer un fichier déjà connu ne consomme rien : la
+déduplication rend le résultat sans relancer le pipeline.
+
+---
+
+## 2026-09-18 — La limitation de débit laisse passer quand elle tombe en panne
+
+**Décision.** Quand Redis ne répond pas, le compteur retombe sur une table locale
+à l'instance, et une erreur du compteur lui-même laisse passer la requête.
+
+**Pourquoi.** Le risque que la limitation écarte — des abus — est moins grave que
+celui qu'elle créerait en échouant fermé : une panne de Redis fermerait le
+service entier. Le repli local continue de protéger contre le cas le plus
+courant, un seul client qui martèle une seule instance.
+
+**Limite assumée.** En plusieurs instances, le repli divise la limite effective
+par le nombre de machines. C'est le prix d'un mode dégradé, et il est visible
+dans les journaux.
+
+---
+
+## 2026-09-18 — CSP nominative, et `blob:` concédé à `script-src`
+
+**Décision.** Politique de contenu par `nonce`, sans `'unsafe-inline'` sur les
+scripts en production. `blob:` est ajouté à `script-src`.
+
+**Pourquoi la concession.** `signalsmith-stretch` compile son AudioWorklet à la
+volée et le charge depuis un blob ; un module d'AudioWorklet relève de
+`script-src`, pas de `worker-src`. L'alternative — servir le module depuis un
+fichier statique — demanderait d'extraire le code interne de la bibliothèque et
+de le maintenir à chaque mise à jour.
+
+**Portée réelle du risque.** Seul du script déjà exécuté sur l'origine peut
+fabriquer un blob. La directive n'ouvre donc pas de porte nouvelle : elle laisse
+passer ce qu'un attaquant ayant déjà l'exécution pourrait faire autrement.
+
+**En développement**, la politique renonce au nonce : un navigateur ignore
+`'unsafe-inline'` dès qu'un nonce est présent, et Vite injecte ses scripts en
+ligne.
+
+---
+
+## 2026-09-18 — La sauvegarde est coupée en deux
+
+**Problème.** `pg_dump` n'est pas disponible sur ce poste et n'y est pas
+installable sans sudo — quatre approches distinctes ont échoué, la dernière sur
+une cascade de bibliothèques partagées.
+
+**Décision.** Le script shell produit le dump ; un script Node séparé le dépose et
+applique la rétention, en lisant l'entrée standard.
+
+**Pourquoi ce découpage.** Il ne s'agit pas de contourner la contrainte mais de
+la cerner : la partie où une erreur détruit des données — le dépôt et la
+rétention — se vérifie avec n'importe quels octets, et elle a été exécutée pour
+de bon. Ce qui reste non vérifié est réduit à l'invocation d'un outil standard,
+et cette limite est consignée dans `PROGRESS.md`.
+
+**Garde-fou.** La rétention ne supprime jamais la dernière sauvegarde : sinon une
+panne de sauvegarde prolongée deviendrait une perte de sauvegarde.
+
+---
+
+## 2026-09-18 — Chercher les valeurs des secrets, pas leurs noms
+
+**Constat.** Un vérificateur qui cherche les _noms_ de variables signale
+immédiatement `BETTER_AUTH_SECRET` : better-auth embarque un accesseur
+d'environnement qui les cite tous, sans jamais porter de valeur. Un faux positif
+permanent rend le contrôle inutile — on finit par l'ignorer.
+
+**Décision.** Le contrôle cherche les **valeurs** des secrets, plus quelques
+chaînes propres à nos modules serveur (les messages de validation d'`env.server.ts`).
+Validé par contrôle négatif avant d'être ajouté à l'intégration continue.
+
+---
+
+## 2026-09-18 — La limite de débit s'applique avant la validation
+
+**Décision.** Dans les routes qui valident un identifiant d'URL, `enforce()` est
+appelé **avant** l'analyse du paramètre.
+
+**Pourquoi.** L'ordre inverse laisse un attaquant marteler la route avec des
+identifiants malformés sans jamais toucher le compteur : le refus arrive plus
+tôt, mais il ne coûte rien à celui qui le provoque.
