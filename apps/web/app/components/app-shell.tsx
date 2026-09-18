@@ -47,7 +47,7 @@ export function AppShell({ user, children }: AppShellProps) {
                 )
               }
             >
-              Pad
+              Chords Pad
             </NavLink>
 
             <Form method="post" action="/logout">
@@ -56,8 +56,8 @@ export function AppShell({ user, children }: AppShellProps) {
                 className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <LogOut aria-hidden className="size-4" />
-                <span className="hidden sm:inline">Se deconnecter</span>
-                <span className="sr-only sm:hidden">Se deconnecter ({user.email})</span>
+                <span className="hidden sm:inline">Se déconnecter</span>
+                <span className="sr-only sm:hidden">Se déconnecter ({user.email})</span>
               </button>
             </Form>
           </nav>

@@ -1,16 +1,26 @@
-import { createReverb } from './reverb.js'
-import { type VoiceSpec, voiceById } from './voices.js'
+import { createDriveCurve, createReverb } from './reverb.js'
+import { type Layer, type VoiceSpec, voiceById } from './voices.js'
 
 /**
- * Pad d'accords tenus, avec fondu enchaine.
+ * Pad d'accords tenus.
  *
- * Le principe d'une nappe est la continuite : passer d'un accord au suivant ne
- * doit jamais laisser de trou. Chaque accord vit donc dans son propre groupe
- * d'oscillateurs, et jouer un accord lance le suivant pendant que le precedent
- * s'eteint — les deux se recouvrent, comme deux mains sur un clavier.
+ * Deux idees structurent le moteur.
  *
- * C'est aussi pourquoi rien n'est reutilise d'un accord a l'autre : reconfigurer
- * des oscillateurs en cours de route produirait un glissando, pas un fondu.
+ * **Un accord, une chaine.** Passer d'un accord au suivant ne doit jamais
+ * laisser de trou : chaque accord vit dans ses propres oscillateurs, et le
+ * suivant monte pendant que le precedent descend. Reconfigurer des oscillateurs
+ * en cours de route produirait un glissando, pas un fondu.
+ *
+ * **Le mouvement avant les harmoniques.** Ce qui distingue une nappe d'un orgue
+ * de test, ce n'est pas le nombre de partiels : c'est l'unisson desaccorde, la
+ * derive lente de chaque oscillateur, le filtre qui respire et l'elargissement
+ * stereo. Tout cela est reconstruit pour chaque accord — c'est le prix a payer
+ * pour que deux accords successifs ne soient jamais exactement identiques.
+ *
+ * Chaine, de la note a la sortie :
+ *
+ *     oscillateurs (unisson, derive) → panoramique → filtre (enveloppe + LFO)
+ *       → saturation → ensemble (retards modules) → enveloppe → direct + reverbe
  */
 
 export interface ChordPadOptions {
@@ -21,9 +31,10 @@ export interface ChordPadOptions {
   readonly smoothness?: number
 }
 
-/** Un accord en cours de vie : ses oscillateurs et son enveloppe. */
-interface Layer {
+interface Layer_ {
   readonly gain: GainNode
+  /** Enveloppe des strates reservees a la reverberation. */
+  readonly shimmer: GainNode
   readonly nodes: readonly AudioScheduledSourceNode[]
   /** Instant a partir duquel les noeuds peuvent etre liberes. */
   stopsAt: number
@@ -32,16 +43,21 @@ interface Layer {
 export const MIN_SMOOTHNESS = 0.4
 export const MAX_SMOOTHNESS = 2.5
 
+/** Au-dela, on empile des oscillateurs que personne n'entend. */
+const MAX_UNISON = 7
+
 export class ChordPad {
   readonly #context: AudioContext
   readonly #dry: GainNode
   readonly #wet: GainNode
   readonly #master: GainNode
-  readonly #reverb: ConvolverNode
+  readonly #echo: GainNode
+  #reverb: ConvolverNode
+  #echoNodes: AudioNode[] = []
 
   #voice: VoiceSpec
   #smoothness: number
-  #layers: Layer[] = []
+  #layers: Layer_[] = []
   #notes: readonly number[] = []
   #disposed = false
 
@@ -50,17 +66,46 @@ export class ChordPad {
     this.#voice = voiceById(options.voice ?? 'warm')
     this.#smoothness = clamp(options.smoothness ?? 1, MIN_SMOOTHNESS, MAX_SMOOTHNESS)
 
+    // Deux etages de securite, pour deux problemes distincts.
+    //
+    // Le compresseur rattrape les cretes musicales — un accord dense a la
+    // douceur maximale, ou un echo qui s'accumule — en les tassant plutot qu'en
+    // les coupant. Mais un compresseur n'est pas un limiteur : il laisse passer
+    // ce qui arrive plus vite que son temps d'attaque.
+    //
+    // La courbe qui suit, elle, borne mathematiquement la sortie a plus ou moins
+    // un. C'est elle qui garantit l'absence d'ecretage, quelle que soit la
+    // combinaison de reglages.
+    const softClip = context.createWaveShaper()
+    softClip.curve = createDriveCurve(0.08)
+    softClip.oversample = '2x'
+    softClip.connect(context.destination)
+
+    const limiter = context.createDynamicsCompressor()
+    limiter.threshold.value = -4
+    limiter.knee.value = 6
+    limiter.ratio.value = 12
+    limiter.attack.value = 0.004
+    limiter.release.value = 0.25
+    limiter.connect(softClip)
+
     this.#master = context.createGain()
     this.#master.gain.value = options.volume ?? 0.7
-    this.#master.connect(context.destination)
+    this.#master.connect(limiter)
 
     this.#dry = context.createGain()
     this.#dry.connect(this.#master)
 
-    this.#reverb = createReverb(context)
     this.#wet = context.createGain()
+    this.#reverb = createReverb(context, this.#voice.reverb)
     this.#wet.connect(this.#reverb)
     this.#reverb.connect(this.#master)
+
+    // L'echo est un envoi, pas un insert : il vit hors des accords et continue
+    // de repeter pendant que le suivant monte. C'est precisement ce qui donne sa
+    // continuite a une nappe d'ambiance.
+    this.#echo = context.createGain()
+    this.#buildEcho()
 
     this.#applyMix()
   }
@@ -77,15 +122,15 @@ export class ChordPad {
   /**
    * Tient un accord, en fondu depuis le precedent.
    *
-   * Rejouer exactement le meme accord ne redeclenche rien : sur un pad, appuyer
-   * deux fois sur le meme bouton ne doit pas produire de battement.
+   * Rejouer exactement le meme accord ne redeclenche rien : appuyer deux fois
+   * sur le meme bouton ne doit pas produire de battement.
    */
   play(notes: readonly number[]): void {
     if (this.#disposed || notes.length === 0) return
     if (sameNotes(this.#notes, notes)) return
 
     this.#release()
-    this.#layers.push(this.#buildLayer(notes))
+    this.#layers.push(this.#buildChord(notes))
     this.#notes = [...notes]
     this.#collect()
   }
@@ -99,7 +144,18 @@ export class ChordPad {
   setVoice(id: string): void {
     const next = voiceById(id)
     if (next.id === this.#voice.id) return
+
     this.#voice = next
+
+    // La queue de reverberation appartient au timbre : une nappe de verre ne se
+    // pose pas dans la meme salle qu'un orgue.
+    const reverb = createReverb(this.#context, next.reverb)
+    this.#wet.disconnect()
+    this.#reverb.disconnect()
+    this.#reverb = reverb
+    this.#wet.connect(reverb)
+    reverb.connect(this.#master)
+    this.#buildEcho()
     this.#applyMix()
 
     // Le changement s'entend tout de suite : l'accord en cours est rejoue avec
@@ -130,94 +186,284 @@ export class ChordPad {
     for (const layer of this.#layers) {
       for (const node of layer.nodes) safeStop(node)
       layer.gain.disconnect()
+      layer.shimmer.disconnect()
     }
     this.#layers = []
     this.#notes = []
+    for (const node of this.#echoNodes) node.disconnect()
+    this.#echoNodes = []
+    this.#echo.disconnect()
     this.#master.disconnect()
     this.#dry.disconnect()
     this.#wet.disconnect()
     this.#reverb.disconnect()
   }
 
-  // --- interne -------------------------------------------------------------
+  // --- construction d'un accord --------------------------------------------
+
+  /**
+   * Echo stereo alterne, reinjecte sur lui-meme.
+   *
+   * Deux lignes a retard qui se nourrissent l'une l'autre : ce qui sort a
+   * gauche rentre a droite, et inversement. Un passe-bas dans la boucle
+   * assombrit chaque repetition — sans lui, l'echo s'entend comme une
+   * repetition, pas comme un lointain.
+   */
+  #buildEcho(): void {
+    const context = this.#context
+    const spec = this.#voice.delay
+
+    for (const node of this.#echoNodes) node.disconnect()
+    this.#echoNodes = []
+    this.#echo.disconnect()
+
+    if (spec.mix <= 0) return
+
+    const left = context.createDelay(2)
+    const right = context.createDelay(2)
+    left.delayTime.value = spec.time
+    right.delayTime.value = spec.time
+
+    const damping = context.createBiquadFilter()
+    damping.type = 'lowpass'
+    damping.frequency.value = spec.damping
+
+    const feedback = context.createGain()
+    feedback.gain.value = Math.min(0.7, spec.feedback)
+
+    const panLeft = context.createStereoPanner()
+    panLeft.pan.value = -0.85
+    const panRight = context.createStereoPanner()
+    panRight.pan.value = 0.85
+
+    const level = context.createGain()
+    level.gain.value = spec.mix
+
+    this.#echo.connect(left)
+    left.connect(panLeft)
+    left.connect(right)
+    right.connect(panRight)
+    right.connect(damping)
+    damping.connect(feedback)
+    feedback.connect(left)
+
+    panLeft.connect(level)
+    panRight.connect(level)
+    level.connect(this.#master)
+    // L'echo alimente aussi la salle : sans cela, les repetitions sonnent
+    // devant la nappe au lieu d'etre dedans.
+    level.connect(this.#wet)
+
+    this.#echoNodes = [left, right, damping, feedback, panLeft, panRight, level]
+  }
 
   #applyMix(): void {
     const now = this.#context.currentTime
-    this.#wet.gain.setTargetAtTime(this.#voice.reverb, now, 0.08)
-    this.#dry.gain.setTargetAtTime(1 - this.#voice.reverb * 0.4, now, 0.08)
+    const mix = this.#voice.reverb.mix
+    this.#wet.gain.setTargetAtTime(mix, now, 0.08)
+    // La part directe ne descend pas a zero : une nappe entierement reverberee
+    // perd son point d'ancrage et semble venir d'ailleurs.
+    this.#dry.gain.setTargetAtTime(1 - mix * 0.45, now, 0.08)
   }
 
-  #buildLayer(notes: readonly number[]): Layer {
+  #buildChord(notes: readonly number[]): Layer_ {
     const context = this.#context
     const voice = this.#voice
     const now = context.currentTime
     const attack = voice.attack * this.#smoothness
 
-    const gain = context.createGain()
-    gain.gain.setValueAtTime(0.0001, now)
-    // Une montee exponentielle : l'oreille percoit le volume en decibels, et une
+    // --- sortie de l'accord -------------------------------------------------
+    const envelope = context.createGain()
+    envelope.gain.setValueAtTime(0.0001, now)
+    // Montee exponentielle : l'oreille percoit le volume en decibels, et une
     // rampe lineaire s'entend comme une arrivee brutale suivie d'un plateau.
-    gain.gain.exponentialRampToValueAtTime(voice.output, now + attack)
+    envelope.gain.exponentialRampToValueAtTime(voice.output, now + attack)
+    envelope.connect(this.#dry)
+    envelope.connect(this.#wet)
+    envelope.connect(this.#echo)
 
-    const filter = context.createBiquadFilter()
-    filter.type = 'lowpass'
-    filter.frequency.value = voice.filter.frequency
-    filter.Q.value = voice.filter.q
-
-    // Le filtre s'ouvre avec l'attaque : une nappe qui s'eclaircit en montant
-    // sonne vivante, une nappe a timbre fixe sonne comme un echantillon tenu.
-    filter.frequency.setValueAtTime(voice.filter.frequency * 0.45, now)
-    filter.frequency.linearRampToValueAtTime(voice.filter.frequency, now + attack)
-
-    filter.connect(gain)
-    gain.connect(this.#dry)
-    gain.connect(this.#wet)
+    // Les strates reservees a la reverberation ont leur propre enveloppe : elles
+    // ne doivent atteindre ni le son direct, ni l'echo.
+    const shimmer = context.createGain()
+    shimmer.gain.setValueAtTime(0.0001, now)
+    shimmer.gain.exponentialRampToValueAtTime(voice.output, now + attack)
+    shimmer.connect(this.#wet)
 
     const nodes: AudioScheduledSourceNode[] = []
-    const vibrato = voice.vibrato ? this.#buildVibrato(voice.vibrato, now) : null
-    if (vibrato) nodes.push(vibrato.oscillator)
 
+    // --- ensemble : deux retards modules, en opposition de phase -------------
+    const ensembleInput = context.createGain()
+    if (voice.chorus.mix > 0) {
+      ensembleInput.connect(envelope)
+      for (const [index, side] of [-1, 1].entries()) {
+        const { nodes: added } = this.#buildEnsembleBranch(
+          ensembleInput,
+          envelope,
+          side,
+          index,
+          now,
+        )
+        nodes.push(...added)
+      }
+    } else {
+      ensembleInput.connect(envelope)
+    }
+
+    // --- saturation ---------------------------------------------------------
+    let head: AudioNode = ensembleInput
+    if (voice.drive > 0) {
+      const shaper = context.createWaveShaper()
+      shaper.curve = createDriveCurve(voice.drive)
+      shaper.oversample = '2x'
+      shaper.connect(ensembleInput)
+      head = shaper
+    }
+
+    // --- filtre, ouvert par l'enveloppe et anime par un LFO ------------------
+    const filter = context.createBiquadFilter()
+    filter.type = voice.filter.type
+    filter.Q.value = voice.filter.q
+    filter.connect(head)
+
+    const base = voice.filter.frequency
+    filter.frequency.setValueAtTime(base / 2 ** voice.filter.envelope, now)
+    filter.frequency.linearRampToValueAtTime(base, now + attack)
+
+    if (voice.filter.lfoDepth > 0) {
+      const lfo = context.createOscillator()
+      lfo.frequency.value = voice.filter.lfoRate
+      const depth = context.createGain()
+      // La profondeur est exprimee en octaves : on la convertit en hertz autour
+      // du point de coupure, sinon le meme reglage serait inaudible dans le
+      // grave et brutal dans l'aigu.
+      depth.gain.value = base * (2 ** voice.filter.lfoDepth - 1) * 0.5
+      lfo.connect(depth)
+      depth.connect(filter.frequency)
+      lfo.start(now)
+      nodes.push(lfo)
+    }
+
+    // --- oscillateurs -------------------------------------------------------
     const weight = totalWeight(voice) * Math.sqrt(notes.length)
 
+    // Une strate reservee a la reverberation contourne le filtre et l'ensemble :
+    // elle n'a rien a faire dans le chemin direct.
     for (const note of notes) {
       const frequency = midiToFrequency(note)
-
-      for (const partial of voice.partials) {
-        const oscillator = context.createOscillator()
-        oscillator.type = partial.type
-        oscillator.frequency.value = frequency * partial.ratio
-        if (partial.detune) oscillator.detune.value = partial.detune
-        vibrato?.depth.connect(oscillator.detune)
-
-        const level = context.createGain()
-        level.gain.value = partial.gain / weight
-
-        oscillator.connect(level)
-        level.connect(filter)
-        oscillator.start(now)
-        nodes.push(oscillator)
+      for (const layer of voice.layers) {
+        const destination = layer.reverbOnly ? shimmer : filter
+        nodes.push(...this.#buildLayer(layer, frequency, weight, destination, now))
       }
     }
 
     if (voice.breath) {
-      const noise = this.#buildBreath(voice.breath / Math.sqrt(notes.length), filter, now)
-      nodes.push(noise)
+      nodes.push(this.#buildBreath(voice.breath / Math.sqrt(notes.length), filter, now))
     }
 
-    return { gain, nodes, stopsAt: Number.POSITIVE_INFINITY }
+    return { gain: envelope, shimmer, nodes, stopsAt: Number.POSITIVE_INFINITY }
   }
 
-  #buildVibrato(
-    vibrato: NonNullable<VoiceSpec['vibrato']>,
+  /**
+   * Une strate : `unison` oscillateurs desaccordes et repartis dans l'espace.
+   *
+   * L'ecart est reparti symetriquement autour de la note, et le panoramique suit
+   * le meme axe : l'oscillateur le plus bas part a gauche, le plus haut a
+   * droite. C'est ce qui fait qu'un unisson s'entend large plutot qu'epais.
+   */
+  #buildLayer(
+    layer: Layer,
+    frequency: number,
+    weight: number,
+    destination: AudioNode,
     now: number,
-  ): { oscillator: OscillatorNode; depth: GainNode } {
-    const oscillator = this.#context.createOscillator()
-    oscillator.frequency.value = vibrato.rate
-    const depth = this.#context.createGain()
-    depth.gain.value = vibrato.depth
-    oscillator.connect(depth)
-    oscillator.start(now)
-    return { oscillator, depth }
+  ): AudioScheduledSourceNode[] {
+    const context = this.#context
+    const count = Math.min(MAX_UNISON, Math.max(1, layer.unison))
+    const nodes: AudioScheduledSourceNode[] = []
+    const start = now + (layer.delay ?? 0)
+
+    for (let index = 0; index < count; index++) {
+      // De -1 a 1 ; un unisson d'un seul oscillateur reste au centre.
+      const position = count === 1 ? 0 : (index / (count - 1)) * 2 - 1
+
+      const oscillator = context.createOscillator()
+      oscillator.type = layer.type
+      oscillator.frequency.value = frequency * layer.ratio
+      oscillator.detune.value = (position * layer.detune) / 2
+
+      if (layer.drift) {
+        // Chaque oscillateur derive a son propre rythme, entre 4 et 12 secondes
+        // de periode. Une derive commune s'entendrait comme un vibrato.
+        const drift = context.createOscillator()
+        drift.frequency.value = 0.08 + Math.random() * 0.17
+        const amount = context.createGain()
+        amount.gain.value = layer.drift
+        drift.connect(amount)
+        amount.connect(oscillator.detune)
+        drift.start(start)
+        nodes.push(drift)
+      }
+
+      const panner = context.createStereoPanner()
+      panner.pan.value = position * layer.spread
+
+      const level = context.createGain()
+      level.gain.value = layer.gain / (weight * count)
+
+      // Une strate retardee arrive en fondu : l'entendre surgir trahirait le
+      // mecanisme.
+      if (layer.delay) {
+        level.gain.setValueAtTime(0.0001, now)
+        level.gain.exponentialRampToValueAtTime(layer.gain / (weight * count), start + 1.2)
+      }
+
+      oscillator.connect(panner)
+      panner.connect(level)
+      level.connect(destination)
+      oscillator.start(now)
+      nodes.push(oscillator)
+    }
+
+    return nodes
+  }
+
+  /** Une branche d'ensemble : un retard module, panoramique d'un cote. */
+  #buildEnsembleBranch(
+    source: AudioNode,
+    destination: AudioNode,
+    side: number,
+    index: number,
+    now: number,
+  ): { nodes: AudioScheduledSourceNode[] } {
+    const context = this.#context
+    const chorus = this.#voice.chorus
+
+    const delay = context.createDelay(0.2)
+    delay.delayTime.value = chorus.delay * (1 + index * 0.35)
+
+    const lfo = context.createOscillator()
+    lfo.frequency.value = chorus.rate * (1 + index * 0.27)
+    // Les deux branches sont en opposition : quand l'une s'allonge, l'autre se
+    // raccourcit. C'est de cet ecart que naît la largeur.
+    const depth = context.createGain()
+    depth.gain.value = chorus.depth * side
+
+    lfo.connect(depth)
+    depth.connect(delay.delayTime)
+    lfo.start(now)
+
+    const panner = context.createStereoPanner()
+    panner.pan.value = side * 0.8
+
+    const level = context.createGain()
+    level.gain.value = chorus.mix
+
+    source.connect(delay)
+    delay.connect(panner)
+    panner.connect(level)
+    level.connect(destination)
+
+    return { nodes: [lfo] }
   }
 
   #buildBreath(amount: number, destination: AudioNode, now: number): AudioBufferSourceNode {
@@ -233,7 +479,7 @@ export class ChordPad {
     source.loop = true
 
     const level = context.createGain()
-    level.gain.value = amount * 0.05
+    level.gain.value = amount * 0.04
 
     source.connect(level)
     level.connect(destination)
@@ -248,9 +494,11 @@ export class ChordPad {
 
     for (const layer of this.#layers) {
       if (layer.stopsAt !== Number.POSITIVE_INFINITY) continue
-      layer.gain.gain.cancelScheduledValues(now)
-      layer.gain.gain.setValueAtTime(Math.max(layer.gain.gain.value, 0.0001), now)
-      layer.gain.gain.exponentialRampToValueAtTime(0.0001, now + release)
+      for (const envelope of [layer.gain, layer.shimmer]) {
+        envelope.gain.cancelScheduledValues(now)
+        envelope.gain.setValueAtTime(Math.max(envelope.gain.value, 0.0001), now)
+        envelope.gain.exponentialRampToValueAtTime(0.0001, now + release)
+      }
       layer.stopsAt = now + release
     }
   }
@@ -259,7 +507,7 @@ export class ChordPad {
    * Libere les calques dont la descente est terminee.
    *
    * Appele a chaque accord plutot que par un minuteur : tant que personne ne
-   * joue, il n'y a rien a nettoyer, et un minuteur tournerait pour rien.
+   * joue, il n'y a rien a nettoyer.
    */
   #collect(): void {
     const now = this.#context.currentTime
@@ -267,6 +515,7 @@ export class ChordPad {
       if (layer.stopsAt > now) return true
       for (const node of layer.nodes) safeStop(node)
       layer.gain.disconnect()
+      layer.shimmer.disconnect()
       return false
     })
   }
@@ -276,8 +525,15 @@ function midiToFrequency(midi: number): number {
   return 440 * 2 ** ((midi - 69) / 12)
 }
 
+/**
+ * Somme des gains du chemin direct.
+ *
+ * Les strates reservees a la reverberation en sont exclues : elles ont leur
+ * propre enveloppe, et les compter ici affaiblirait le son direct a mesure qu'on
+ * ajoute du scintillement.
+ */
 function totalWeight(voice: VoiceSpec): number {
-  return voice.partials.reduce((sum, partial) => sum + partial.gain, 0)
+  return voice.layers.reduce((sum, layer) => (layer.reverbOnly ? sum : sum + layer.gain), 0)
 }
 
 function sameNotes(a: readonly number[], b: readonly number[]): boolean {

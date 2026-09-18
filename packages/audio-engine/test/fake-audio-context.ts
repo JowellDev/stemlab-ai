@@ -92,6 +92,67 @@ export class FakeBiquadFilterNode {
   }
 }
 
+export class FakeStereoPannerNode {
+  readonly pan = new FakeAudioParam(0)
+  readonly connections = new Set<object>()
+
+  connect(destination: object): void {
+    this.connections.add(destination)
+  }
+
+  disconnect(): void {
+    this.connections.clear()
+  }
+}
+
+export class FakeDelayNode {
+  readonly delayTime: FakeAudioParam
+  readonly connections = new Set<object>()
+
+  constructor(maxDelay = 1) {
+    this.delayTime = new FakeAudioParam(Math.min(0, maxDelay))
+  }
+
+  connect(destination: object): void {
+    this.connections.add(destination)
+  }
+
+  disconnect(): void {
+    this.connections.clear()
+  }
+}
+
+export class FakeWaveShaperNode {
+  curve: Float32Array | null = null
+  oversample: OverSampleType = 'none'
+  readonly connections = new Set<object>()
+
+  connect(destination: object): void {
+    this.connections.add(destination)
+  }
+
+  disconnect(): void {
+    this.connections.clear()
+  }
+}
+
+export class FakeDynamicsCompressorNode {
+  readonly threshold = new FakeAudioParam(-24)
+  readonly knee = new FakeAudioParam(30)
+  readonly ratio = new FakeAudioParam(12)
+  readonly attack = new FakeAudioParam(0.003)
+  readonly release = new FakeAudioParam(0.25)
+  readonly connections = new Set<object>()
+
+  connect(destination: object): void {
+    this.connections.add(destination)
+  }
+
+  disconnect(): void {
+    this.connections.clear()
+  }
+}
+
 export class FakeConvolverNode {
   buffer: FakeAudioBuffer | null = null
   readonly connections = new Set<object>()
@@ -212,6 +273,10 @@ export class FakeAudioContext {
   readonly createdOscillators: FakeOscillatorNode[] = []
   readonly createdFilters: FakeBiquadFilterNode[] = []
   readonly createdConvolvers: FakeConvolverNode[] = []
+  readonly createdPanners: FakeStereoPannerNode[] = []
+  readonly createdDelays: FakeDelayNode[] = []
+  readonly createdShapers: FakeWaveShaperNode[] = []
+  readonly createdCompressors: FakeDynamicsCompressorNode[] = []
   closed = false
 
   constructor(options: { sampleRate?: number } = {}) {
@@ -262,6 +327,30 @@ export class FakeAudioContext {
     const convolver = new FakeConvolverNode()
     this.createdConvolvers.push(convolver)
     return convolver
+  }
+
+  createDynamicsCompressor(): FakeDynamicsCompressorNode {
+    const compressor = new FakeDynamicsCompressorNode()
+    this.createdCompressors.push(compressor)
+    return compressor
+  }
+
+  createStereoPanner(): FakeStereoPannerNode {
+    const panner = new FakeStereoPannerNode()
+    this.createdPanners.push(panner)
+    return panner
+  }
+
+  createDelay(maxDelay?: number): FakeDelayNode {
+    const delay = new FakeDelayNode(maxDelay)
+    this.createdDelays.push(delay)
+    return delay
+  }
+
+  createWaveShaper(): FakeWaveShaperNode {
+    const shaper = new FakeWaveShaperNode()
+    this.createdShapers.push(shaper)
+    return shaper
   }
 
   async resume(): Promise<void> {

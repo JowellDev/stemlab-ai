@@ -25,6 +25,12 @@ export function uniqueEmail(prefix = 'test'): string {
 
 export async function signUp(page: Page, prefix?: string): Promise<void> {
   await page.goto('/signup')
+
+  // React remet les champs controles a leur etat initial en s'hydratant : une
+  // saisie anterieure est effacee, et le formulaire part vide. Attendre le
+  // marqueur est le seul moyen fiable de l'eviter.
+  await waitForHydration(page)
+
   await page.getByLabel('Nom').fill('Camille Durand')
   await page.getByLabel('Adresse electronique').fill(uniqueEmail(prefix))
   await page.getByLabel('Mot de passe').fill('motdepasse-solide')
@@ -46,7 +52,6 @@ export async function openReadyTrack(
 
   await signUp(page, 'chords')
 
-  await waitForHydration(page)
   await page.setInputFiles('input[type="file"]', fixture)
   const card = page.getByRole('listitem').filter({ hasText: name })
   await expect(card).toBeVisible({ timeout: 60_000 })
