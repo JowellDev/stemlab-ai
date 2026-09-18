@@ -12,6 +12,7 @@
   },
   "include": [
     "app",
+    "app/vite-env.d.ts",
     "vite.config.ts",
     "react-router.config.ts",
     ".react-router/types/**/*",

@@ -18,7 +18,13 @@ const SignInForm = z.object({
 type FieldErrors = Partial<Record<'email' | 'password', string>>
 
 export function meta(_args: Route.MetaArgs) {
-  return [{ title: 'Connexion — STEMLAB' }]
+  return [
+    { title: 'Connexion — STEMLAB' },
+    {
+      name: 'description',
+      content: 'Accedez a vos morceaux, a leurs pistes isolees et a leur analyse harmonique.',
+    },
+  ]
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

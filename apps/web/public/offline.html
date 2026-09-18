@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Hors connexion — STEMLAB</title>
+    <link rel="icon" href="/favicon.svg" />
+    <!--
+      Page statique, volontairement : le service worker la sert sous l'URL
+      demandee, et le HTML rendu par le serveur d'une route React Router
+      s'hydraterait alors contre la mauvaise route. Aucun script, aucune
+      requete — c'est tout l'interet d'un repli hors ligne.
+    -->
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: oklch(0.15 0.01 265);
+        --fg: oklch(0.97 0 0);
+        --muted: oklch(0.7 0.02 265);
+        --brand: oklch(0.72 0.17 195);
+        --border: oklch(0.3 0.015 265);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 16px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          sans-serif;
+        text-align: center;
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        width: 100%;
+        max-width: 28rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+      p {
+        margin: 8px 0 0;
+        font-size: 0.875rem;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+      svg {
+        margin: 0 auto;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      a,
+      button {
+        font: inherit;
+        font-weight: 500;
+        border-radius: 0.5rem;
+        padding: 12px 20px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      a {
+        background: var(--brand);
+        color: oklch(0.15 0.01 265);
+        border: 1px solid transparent;
+      }
+      button {
+        background: transparent;
+        color: var(--fg);
+        border: 1px solid var(--border);
+      }
+      a:focus-visible,
+      button:focus-visible {
+        outline: 2px solid var(--brand);
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main data-testid="offline-fallback">
+      <svg
+        aria-hidden="true"
+        width="40"
+        height="40"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="m2 2 20 20" />
+        <path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193" />
+        <path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07" />
+      </svg>
+
+      <div>
+        <h1>Hors connexion</h1>
+        <p>
+          Cette page n'est pas disponible sans reseau. Vos morceaux telecharges, eux, restent
+          ecoutables.
+        </p>
+      </div>
+
+      <div class="actions">
+        <a href="/library">Ouvrir ma bibliotheque</a>
+        <button type="button" onclick="location.reload()">Reessayer</button>
+      </div>
+    </main>
+  </body>
+</html>

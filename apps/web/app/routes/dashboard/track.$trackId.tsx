@@ -29,7 +29,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       artist: true,
       durationSeconds: true,
       status: true,
-      stems: { select: { type: true, key: true, waveform: true }, orderBy: { type: 'asc' } },
+      stems: {
+        select: { type: true, key: true, format: true, waveform: true },
+        orderBy: { type: 'asc' },
+      },
       analysis: true,
     },
   })
@@ -68,6 +71,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     user,
+    // Le format de chaque piste sert au stockage hors-ligne : c'est lui qui
+    // determine le nom du fichier et son type MIME a la relecture.
+    formats: Object.fromEntries(track.stems.map((stem) => [stem.type, stem.format])),
     track: {
       id: track.id,
       title: track.title,
@@ -81,7 +87,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function Track({ loaderData }: Route.ComponentProps) {
-  const { user, track, stems, analysis } = loaderData
+  const { user, track, stems, analysis, formats } = loaderData
   const subtitle = track.artist ?? undefined
 
   return (
@@ -96,10 +102,12 @@ export default function Track({ loaderData }: Route.ComponentProps) {
         </Link>
 
         <TrackWorkspace
+          trackId={track.id}
           title={track.title}
           {...(subtitle ? { subtitle } : {})}
           stems={stems}
           analysis={analysis}
+          formats={formats}
         />
       </main>
     </AppShell>

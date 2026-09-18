@@ -1,7 +1,22 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = 3100
-const BASE_URL = `http://127.0.0.1:${PORT}`
+const DEV_PORT = 3100
+const DEV_URL = `http://127.0.0.1:${DEV_PORT}`
+
+/**
+ * Le mode hors-ligne ne se teste que sur un build de production.
+ *
+ * En developpement, les modules JavaScript viennent du serveur Vite et ne sont pas
+ * precaches : la page s'affiche depuis le cache mais React ne s'hydrate jamais.
+ * Seul un build reel met les bundles entre les mains de Workbox.
+ */
+const PWA_PORT = 3200
+const PWA_URL = `http://127.0.0.1:${PWA_PORT}`
+
+const SERVER_ENV = {
+  APP_URL: DEV_URL,
+  BETTER_AUTH_URL: DEV_URL,
+}
 
 export default defineConfig({
   testDir: './e2e',
@@ -16,27 +31,50 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
   use: {
-    baseURL: BASE_URL,
+    baseURL: DEV_URL,
     trace: 'on-first-retry',
   },
+
   projects: [
-    { name: 'chromium-desktop', use: { ...devices['Desktop Chrome'] } },
-    // 390 px : le format de reference mobile impose par le cahier des charges.
     {
+      name: 'chromium-desktop',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: /offline\.spec\.ts/,
+    },
+    {
+      // 390 px : le format de reference mobile impose par le cahier des charges.
       name: 'chromium-mobile',
       use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } },
+      // La mesure de derive porte sur le moteur audio, pas sur la mise en page :
+      // la rejouer ici doublerait une empreinte memoire deja lourde — cinq minutes
+      // de rendu hors-ligne sur huit canaux representent plus de 500 Mo.
+      testIgnore: /(offline|drift)\.spec\.ts/,
+    },
+    {
+      name: 'pwa',
+      use: { ...devices['Desktop Chrome'], baseURL: PWA_URL },
+      testMatch: /offline\.spec\.ts/,
     },
   ],
-  webServer: {
-    command: `pnpm dev --port ${PORT}`,
-    env: {
-      // Le webhook du worker est derive d'APP_URL : sans cela il pointerait vers
-      // le port 3000 tandis que les tests tournent sur 3100.
-      APP_URL: BASE_URL,
-      BETTER_AUTH_URL: BASE_URL,
+
+  webServer: [
+    {
+      command: `pnpm dev --port ${DEV_PORT}`,
+      url: `${DEV_URL}/health`,
+      env: {
+        // Le webhook du worker est derive d'APP_URL : sans cela il pointerait vers
+        // le port 3000 tandis que les tests tournent sur 3100.
+        ...SERVER_ENV,
+      },
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
     },
-    url: `${BASE_URL}/health`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+    {
+      command: `pnpm build && PORT=${PWA_PORT} pnpm start`,
+      url: `${PWA_URL}/health`,
+      env: { APP_URL: PWA_URL, BETTER_AUTH_URL: PWA_URL },
+      reuseExistingServer: !process.env.CI,
+      timeout: 240_000,
+    },
+  ],
 })

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRevalidator } from 'react-router'
 import { AppShell } from '~/components/app-shell'
 import { TrackCard } from '~/components/track-card'
+import { InstallBanner } from '~/components/install-banner'
 import { UploadDropzone } from '~/components/upload-dropzone'
 import { useTrackEvents } from '~/hooks/use-track-events'
 import { db } from '~/lib/db.server'
@@ -138,6 +139,8 @@ export default function Library({ loaderData }: Route.ComponentProps) {
               : `${merged.length} morceau${merged.length > 1 ? 'x' : ''}.`}
           </p>
         </header>
+
+        <InstallBanner />
 
         <UploadDropzone onUploaded={() => void revalidator.revalidate()} />
 

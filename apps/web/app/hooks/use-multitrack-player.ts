@@ -9,7 +9,10 @@ import { PlayerStore, type PlayerState } from '~/lib/player-store'
  * de l'audio. `useSyncExternalStore` est l'outil fait pour ca, et rend le cas
  * serveur trivial — Web Audio n'existe pas cote serveur, l'instantane y est constant.
  */
-export function useMultitrackPlayer(sources: readonly StemSource[]): PlayerState {
+export function useMultitrackPlayer(
+  sources: readonly StemSource[],
+  fetchImpl?: typeof fetch,
+): PlayerState {
   // Initialiseur paresseux : le constructeur est pur, aucun AudioContext n'est
   // cree avant `setSources`.
   const [store] = useState(() => new PlayerStore())
@@ -17,8 +20,9 @@ export function useMultitrackPlayer(sources: readonly StemSource[]): PlayerState
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot)
 
   useEffect(() => {
+    store.setFetch(fetchImpl)
     store.setSources(sources)
-  }, [store, sources])
+  }, [store, sources, fetchImpl])
 
   useEffect(() => () => store.stop(), [store])
 

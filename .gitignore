@@ -8,6 +8,8 @@ packages/database/src/generated/
 # build artifacts
 build/
 dist/
+# service worker de developpement, regenere par vite-plugin-pwa
+dev-dist/
 .react-router/
 .turbo/
 *.tsbuildinfo

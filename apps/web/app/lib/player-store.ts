@@ -45,6 +45,7 @@ export class PlayerStore {
   #state: PlayerState = SERVER_PLAYER_STATE
   readonly #listeners = new Set<() => void>()
   #player: MultitrackPlayer | null = null
+  #fetchImpl: typeof fetch | undefined
   #controller: AbortController | null = null
   #unsubscribers: Array<() => void> = []
   #sourcesKey = ''
@@ -66,6 +67,16 @@ export class PlayerStore {
    * permet a l'appelant de passer un tableau recree a chaque rendu sans detruire
    * l'AudioContext a chaque fois.
    */
+  /**
+   * Installe un `fetch` particulier pour la resolution des pistes.
+   *
+   * C'est par la que le mode hors-ligne s'insere : le lecteur ne sait pas d'ou
+   * viennent ses stems, il ne connait que des URL et un `fetch`.
+   */
+  setFetch(fetchImpl: typeof fetch | undefined): void {
+    this.#fetchImpl = fetchImpl
+  }
+
   setSources(sources: readonly StemSource[]): void {
     const key = sources.map((source) => `${source.type}:${source.url}`).join('|')
     if (key === this.#sourcesKey) return
@@ -82,7 +93,7 @@ export class PlayerStore {
   #start(sources: readonly StemSource[]): void {
     let player: MultitrackPlayer
     try {
-      player = new MultitrackPlayer()
+      player = new MultitrackPlayer(this.#fetchImpl ? { fetchImpl: this.#fetchImpl } : {})
     } catch (cause) {
       this.#set({ error: toError(cause) })
       return
