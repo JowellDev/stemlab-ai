@@ -198,6 +198,7 @@ curl -X POST http://127.0.0.1:8000/jobs \
 | `pnpm lint`       | ESLint, puis `ruff check` et `ruff format --check`   |
 | `pnpm test`       | Vitest et pytest                                     |
 | `pnpm test:e2e`   | Playwright                                           |
+| `pnpm soundfont`  | récupère la banque d'échantillons du pad (24 Mo)     |
 | `pnpm format`     | Prettier en écriture                                 |
 | `pnpm services`   | services locaux sans Docker                          |
 | `pnpm db:migrate` | migration Prisma en développement                    |
@@ -256,13 +257,40 @@ chercher un accord parmi douze est exactement ce qu'il faut éviter. Huit pads �
 les sept degrés, plus un emprunt utile : le `bVII` en majeur, le `V` majeur en
 mineur, tous deux omniprésents dans le répertoire de louange.
 
-**Huit timbres, aucun échantillon.** Chaque voix est un empilement de partiels
-synthétisés ; la réverbération est une réponse impulsionnelle générée. Rien à
-télécharger, et le pad fonctionne hors connexion.
+**Trois sources, assumées pour ce qu'elles sont.**
 
-**Le fondu enchaîné est le sujet.** Chaque accord vit dans son propre groupe
-d'oscillateurs : le suivant monte pendant que le précédent descend. Réutiliser
-les oscillateurs produirait un glissando, pas un fondu.
+| Source           | Ce qu'elle apporte                    | Ce qu'elle coûte                          |
+| ---------------- | ------------------------------------- | ----------------------------------------- |
+| **Synthèse**     | rien à télécharger, marche hors ligne | ne sonnera jamais comme un enregistrement |
+| **Échantillons** | le grain d'instruments réels          | 24 Mo au premier usage ; nappes GM datées |
+| **Mes nappes**   | exactement le son voulu               | il faut posséder les fichiers             |
+
+**Synthèse.** Huit timbres, aucun échantillon : unisson stéréo désaccordé, dérive
+lente et indépendante de chaque oscillateur, filtre qui respire, écho stéréo
+alterné et scintillement envoyé à la seule réverbération. Ce qui fait tenir une
+nappe, c'est le mouvement — pas le nombre de partiels.
+
+Chaque accord vit dans son propre groupe d'oscillateurs : le suivant monte pendant
+que le précédent descend. Réutiliser les oscillateurs produirait un glissando, pas
+un fondu.
+
+**Échantillons.** Un synthétiseur SoundFont (`spessasynth`, Apache-2.0) et la
+banque `FluidR3Mono_GM.sf3` (MIT). Récupérée par `pnpm soundfont`, jamais
+précachée, téléchargée par le navigateur au premier usage puis conservée
+localement. On peut charger sa propre banque `.sf2`.
+
+> **Licence.** FluidSynth a été écarté : son wrapper npm est en BSD, mais
+> **libfluidsynth est en LGPL v2.1** — la même raison qui avait fait écarter
+> SoundTouch en phase 6.
+
+**Mes nappes.** Le modèle des bibliothèques du commerce : un fichier par tonalité,
+tenu en boucle, avec un fondu enchaîné au changement de tonalité. La tonalité est
+lue dans le nom du fichier, et reste modifiable. **Aucun effet n'est ajouté** —
+ces enregistrements sortent d'un studio, réverbération comprise. Les fichiers
+restent sur l'appareil et ne passent jamais par le serveur.
+
+> Une nappe enregistrée couvre **une tonalité, pas un accord** : quel que soit le
+> pad touché, c'est la nappe de la tonalité qui sonne.
 
 Les pads sont colorés par fonction tonale — repos, départ, tension, couleur —
 et non par degré : quatre familles se lisent d'un coup d'œil, huit teintes

@@ -1175,3 +1175,52 @@ louange, là où le `vii°` n'est jamais joué. En mineur, le `V` majeur, aux c�
 **Limite assumée.** Les accords hors tonalité — emprunts plus rares, dominantes
 secondaires — ne sont pas accessibles. Changer de tonalité reste possible d'un
 clic ; au-delà, ce serait un autre instrument.
+
+---
+
+## 2026-09-18 — Trois sources pour le pad, et ce que chacune implique
+
+**Constat.** Les nappes de louange vendues dans le commerce sont des **fichiers
+audio produits en studio, un par tonalité** — pas des synthétiseurs. Aucune
+synthèse dans un navigateur ne les égalera : la valeur est dans l'enregistrement.
+
+**Décision.** Trois sources coexistent, chacune assumée pour ce qu'elle est.
+
+| Source       | Ce qu'elle apporte                    | Ce qu'elle coûte                          |
+| ------------ | ------------------------------------- | ----------------------------------------- |
+| Synthèse     | rien à télécharger, marche hors ligne | ne sonnera jamais comme un enregistrement |
+| Échantillons | le grain d'instruments réels          | 24 Mo au premier usage ; nappes GM datées |
+| Vos nappes   | exactement le son voulu               | il faut posséder les fichiers             |
+
+**Corollaire assumé.** Une nappe enregistrée couvre une tonalité entière, pas un
+accord. Le modèle d'interaction diffère donc des deux autres sources, et
+l'interface l'énonce plutôt que de laisser croire à un défaut.
+
+---
+
+## 2026-09-18 — Aucun effet sur les nappes importées
+
+**Décision.** La chaîne de réverbération et d'écho est contournée pour la source
+« Mes nappes ». Les réglages qui n'ont pas de prise sont masqués ou désactivés.
+
+**Pourquoi.** Ces fichiers sortent d'un studio, réverbération comprise. Leur en
+superposer une seconde ne les améliorerait pas, elle les embrouillerait. Et un
+réglage qui bouge sans rien changer est pire qu'un réglage absent : il fait douter
+de tout le reste.
+
+---
+
+## 2026-09-18 — La tonalité se lit par jetons, pas par recherche de lettre
+
+**Constat.** Chercher une note n'importe où dans un nom de fichier lit `A` dans
+« Ambient », `D` dans « Dwell » et `G` dans « Grandiose ». Les noms de
+bibliothèques en sont pleins.
+
+**Décision.** Le nom est découpé en jetons, et seul un jeton qui **est** une
+tonalité est reconnu : `C`, `F#`, `Bbm`, `Amaj`, ou une note suivie de
+`major`/`minor`. En l'absence de mode, le majeur est choisi — beaucoup de
+bibliothèques ne le précisent pas, une nappe tenue étant souvent jouable dans les
+deux.
+
+**Garde-fou.** La tonalité devinée reste modifiable : elle fait gagner vingt-quatre
+réglages, elle n'engage rien.
