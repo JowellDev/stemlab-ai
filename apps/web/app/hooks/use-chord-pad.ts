@@ -1,14 +1,16 @@
 import {
   ChordPad,
+  LibraryPad,
   SoundFontPad,
   createAudioContext,
   unlockOnFirstGesture,
 } from '@stemlab/audio-engine'
-import { type ChordQuality, chordNotes } from '@stemlab/music'
+import { type ChordQuality, chordNotes, keyId } from '@stemlab/music'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePadLibrary, type UsePadLibrary } from '~/hooks/use-pad-library'
 import { useSoundFont, type UseSoundFont } from '~/hooks/use-soundfont'
 
-export type PadSource = 'synth' | 'soundfont'
+export type PadSource = 'synth' | 'soundfont' | 'library'
 
 export interface ChordPadSettings {
   readonly source: PadSource
@@ -18,6 +20,11 @@ export interface ChordPadSettings {
   readonly octave: number
   /** Programme General MIDI, quand la source est echantillonnee. */
   readonly program: number
+  /** Tonalite courante : elle designe la nappe a jouer, pour la bibliotheque. */
+  readonly keyRoot: number
+  readonly keyMode: 'major' | 'minor'
+  /** Duree du fondu entre deux tonalites, en secondes. */
+  readonly crossfade: number
 }
 
 export interface PlayableChord {
@@ -34,6 +41,9 @@ export interface UseChordPad {
   /** Charge la banque d'echantillons, ou en remplace la source par un fichier. */
   loadBank: (file?: File) => Promise<void>
   bank: UseSoundFont
+  library: UsePadLibrary
+  /** Vrai quand la tonalite courante n'a aucune nappe importee. */
+  missingKey: boolean
 }
 
 /**
@@ -49,6 +59,14 @@ export interface UseChordPad {
  */
 export function useChordPad(settings: ChordPadSettings): UseChordPad {
   const bank = useSoundFont()
+  const [libraryPadRef, setLibraryPad] = useState<LibraryPad | null>(null)
+  const library = usePadLibrary(libraryPadRef)
+  // Miroir du pad de bibliotheque, pour le liberer au demontage : l'effet de
+  // nettoyage ne doit pas se rejouer chaque fois que le pad change.
+  const libraryForCleanup = useRef<LibraryPad | null>(null)
+  useEffect(() => {
+    libraryForCleanup.current = libraryPadRef
+  }, [libraryPadRef])
   const contextRef = useRef<AudioContext | null>(null)
   const unlockRef = useRef<(() => void) | null>(null)
   const synthPadRef = useRef<ChordPad | null>(null)
@@ -83,12 +101,24 @@ export function useChordPad(settings: ChordPadSettings): UseChordPad {
     return pad
   }, [ensureContext])
 
+  // La bibliotheque a besoin d'un contexte pour decoder : on le cree des que la
+  // source est choisie, et pas avant.
+  useEffect(() => {
+    if (settings.source !== 'library' || libraryPadRef) return
+    setLibraryPad(new LibraryPad(ensureContext(), { crossfade: settings.crossfade }))
+  }, [settings.source, settings.crossfade, libraryPadRef, ensureContext])
+
+  useEffect(() => {
+    libraryPadRef?.setCrossfade(settings.crossfade)
+  }, [libraryPadRef, settings.crossfade])
+
   useEffect(() => {
     return () => {
       synthPadRef.current?.dispose()
       samplePadRef.current?.dispose()
       synthPadRef.current = null
       samplePadRef.current = null
+      libraryForCleanup.current?.dispose()
       unlockRef.current?.()
       void contextRef.current?.close().catch(() => {
         // Contexte deja ferme : il n'y a plus rien a liberer.
@@ -107,7 +137,8 @@ export function useChordPad(settings: ChordPadSettings): UseChordPad {
   useEffect(() => {
     synthPadRef.current?.setVolume(settings.volume)
     samplePadRef.current?.setVolume(settings.volume)
-  }, [settings.volume])
+    libraryPadRef?.setVolume(settings.volume)
+  }, [settings.volume, libraryPadRef])
 
   useEffect(() => {
     synthPadRef.current?.setSmoothness(settings.smoothness)
@@ -138,9 +169,42 @@ export function useChordPad(settings: ChordPadSettings): UseChordPad {
     [bank, ensureContext],
   )
 
+  const currentKey = keyId(settings.keyRoot, settings.keyMode)
+  const missingKey = settings.source === 'library' && !library.ready.has(currentKey)
+
+  // La bibliotheque tient une nappe par tonalite : quand la tonalite change, la
+  // nappe suit, sans qu'on ait a toucher un accord.
+  useEffect(() => {
+    if (settingsRef.current.source !== 'library') return
+    // Rien a faire tant que rien ne sonne : changer de tonalite n'allume pas le
+    // pad, cela suit ce qui est deja en cours.
+    if (!libraryPadRef || libraryPadRef.current === null) return
+    libraryPadRef.play(currentKey)
+  }, [currentKey, libraryPadRef])
+
   const play = useCallback(
     (chord: PlayableChord) => {
       const current = settingsRef.current
+
+      // Une nappe enregistree couvre une tonalite entiere, pas un accord : quel
+      // que soit le pad touche, c'est la nappe de la tonalite qui sonne. Le
+      // dire dans l'interface evite que l'ecart passe pour un defaut.
+      if (current.source === 'library') {
+        const pad = libraryPadRef
+        if (!pad) return
+
+        if (pad.current !== null) {
+          pad.stop()
+          setActive(null)
+          return
+        }
+
+        synthPadRef.current?.stop()
+        samplePadRef.current?.stop()
+        if (pad.play(keyId(current.keyRoot, current.keyMode))) setActive(chord.label)
+        return
+      }
+
       const pad = current.source === 'soundfont' ? samplePadRef.current : ensureSynth()
       if (!pad) return
 
@@ -169,14 +233,15 @@ export function useChordPad(settings: ChordPadSettings): UseChordPad {
       )
       setActive(chord.label)
     },
-    [active, ensureSynth],
+    [active, ensureSynth, libraryPadRef],
   )
 
   const stop = useCallback(() => {
     synthPadRef.current?.stop()
     samplePadRef.current?.stop()
+    libraryPadRef?.stop()
     setActive(null)
-  }, [])
+  }, [libraryPadRef])
 
-  return { active, play, stop, loadBank, bank }
+  return { active, play, stop, loadBank, bank, library, missingKey }
 }

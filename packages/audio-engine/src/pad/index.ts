@@ -17,3 +17,10 @@ export {
   type SoundFontPadOptions,
   type SoundFontSynthesizer,
 } from './soundfont-pad.js'
+export {
+  DEFAULT_CROSSFADE,
+  LibraryPad,
+  MAX_CROSSFADE,
+  MIN_CROSSFADE,
+  type LibraryPadOptions,
+} from './library-pad.js'

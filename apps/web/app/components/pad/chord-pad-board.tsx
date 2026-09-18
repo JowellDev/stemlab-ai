@@ -5,10 +5,11 @@ import {
   type DiatonicChord,
   type Mode,
   diatonicChords,
+  keyId,
   pitchClassName,
 } from '@stemlab/music'
 import { Alert, AlertDescription, Button, Progress, Slider, cn } from '@stemlab/ui'
-import { Download, Upload, Volume2, VolumeX, Waves } from 'lucide-react'
+import { Download, Music, Trash2, Upload, Volume2, VolumeX, Waves } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { useChordPad, type PadSource } from '~/hooks/use-chord-pad'
 import { PAD_PROGRAMS } from '~/lib/pad-programs'
@@ -83,11 +84,25 @@ export function ChordPadBoard() {
   const [octave, setOctave] = useState(4)
   const [source, setSource] = useState<PadSource>('synth')
   const [program, setProgram] = useState(PAD_PROGRAMS[0]!.value)
+  const [crossfade, setCrossfade] = useState(3)
   const fileRef = useRef<HTMLInputElement>(null)
+  const libraryFileRef = useRef<HTMLInputElement>(null)
 
-  const pad = useChordPad({ source, voice, volume, smoothness, octave, program })
+  const pad = useChordPad({
+    source,
+    voice,
+    volume,
+    smoothness,
+    octave,
+    program,
+    keyRoot: root,
+    keyMode: mode,
+    crossfade,
+  })
   const bank = pad.bank
+  const library = pad.library
   const sampled = source === 'soundfont'
+  const fromFiles = source === 'library'
 
   async function chooseSource(next: PadSource) {
     setSource(next)
@@ -209,12 +224,12 @@ export function ChordPadBoard() {
             Source
           </h2>
 
-          <div className="flex gap-1.5" role="group" aria-label="Source sonore">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Source sonore">
             <Button
               type="button"
               size="sm"
-              variant={!sampled ? 'secondary' : 'ghost'}
-              aria-pressed={!sampled}
+              variant={source === 'synth' ? 'secondary' : 'ghost'}
+              aria-pressed={source === 'synth'}
               onClick={() => void chooseSource('synth')}
             >
               Synthese
@@ -228,7 +243,105 @@ export function ChordPadBoard() {
             >
               Echantillons
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={fromFiles ? 'secondary' : 'ghost'}
+              aria-pressed={fromFiles}
+              onClick={() => void chooseSource('library')}
+            >
+              Mes nappes
+            </Button>
           </div>
+
+          {fromFiles ? (
+            <div className="flex flex-col gap-2" data-testid="pad-library">
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Une nappe par tonalite, comme les bibliotheques du commerce. Vos fichiers restent
+                sur cet appareil et ne sont jamais envoyes.
+              </p>
+
+              {library.error ? (
+                <Alert variant="destructive">
+                  <AlertDescription className="flex items-center justify-between gap-2 text-xs">
+                    <span>{library.error}</span>
+                    <Button type="button" size="sm" variant="ghost" onClick={library.dismissError}>
+                      Fermer
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {library.entries.length > 0 ? (
+                <ul className="flex flex-col gap-1.5">
+                  {library.entries.map((entry) => (
+                    <li key={entry.id} className="flex items-center gap-1.5">
+                      <Music aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-xs" title={entry.name}>
+                        {entry.name}
+                      </span>
+                      <select
+                        value={entry.keyId}
+                        aria-label={`Tonalite de ${entry.name}`}
+                        onChange={(event) => void library.assign(entry.id, event.target.value)}
+                        className="border-input bg-card focus-visible:ring-brand rounded border px-1.5 py-1 text-xs focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        <option value="">—</option>
+                        {ROOTS.flatMap((value) =>
+                          (['major', 'minor'] as const).map((m) => (
+                            <option key={`${value}-${m}`} value={keyId(value, m)}>
+                              {pitchClassName(value, m === 'minor' ? 'flat' : 'sharp')}
+                              {m === 'minor' ? 'm' : ''}
+                            </option>
+                          )),
+                        )}
+                      </select>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label={`Retirer ${entry.name}`}
+                        onClick={() => void library.remove(entry.id)}
+                      >
+                        <Trash2 aria-hidden className="size-3.5" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {pad.missingKey && library.entries.length > 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  Aucune nappe pour {keyName}. Choisissez une autre tonalite, ou assignez-en une.
+                </p>
+              ) : null}
+
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="justify-start"
+                disabled={library.importing}
+                onClick={() => libraryFileRef.current?.click()}
+              >
+                <Upload aria-hidden className="size-4" />
+                {library.importing ? 'Import en cours…' : 'Ajouter des nappes'}
+              </Button>
+              <input
+                ref={libraryFileRef}
+                type="file"
+                accept="audio/*"
+                multiple
+                aria-label="Fichiers de nappes"
+                className="sr-only"
+                onChange={(event) => {
+                  const files = event.target.files
+                  if (files?.length) void library.add(files)
+                  event.target.value = ''
+                }}
+              />
+            </div>
+          ) : null}
 
           {sampled ? (
             <div className="flex flex-col gap-2" data-testid="pad-bank">
@@ -310,10 +423,16 @@ export function ChordPadBoard() {
 
         <section className="flex flex-col gap-2" aria-label="Timbre">
           <h2 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-            {sampled ? 'Ambiance' : 'Timbre'}
+            {fromFiles ? 'Sans effet' : sampled ? 'Ambiance' : 'Timbre'}
           </h2>
 
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Choix du timbre">
+          {/* Les timbres ne servent qu'aux sources synthetisees : la bibliotheque
+              n'emprunte ni salle ni echo. Les afficher la serait un reglage mort. */}
+          <div
+            className={cn('flex flex-wrap gap-1.5', fromFiles && 'hidden')}
+            role="group"
+            aria-label="Choix du timbre"
+          >
             {VOICES.map((entry) => (
               <button
                 key={entry.id}
@@ -336,9 +455,11 @@ export function ChordPadBoard() {
           {/* La description du timbre choisi, plutot que les huit a la fois : on
               lit ce qu'on a sous la main, pas un catalogue. */}
           <p className="text-muted-foreground text-xs leading-relaxed" data-testid="pad-voice-hint">
-            {sampled
-              ? `Salle et echo empruntes a « ${selectedVoice.name} ». Les sons, eux, viennent de la banque.`
-              : selectedVoice.description}
+            {fromFiles
+              ? 'Vos nappes sortent d un studio, reverberation comprise : leur en ajouter une seconde les embrouillerait.'
+              : sampled
+                ? `Salle et echo empruntes a « ${selectedVoice.name} ». Les sons, eux, viennent de la banque.`
+                : selectedVoice.description}
           </p>
         </section>
 
@@ -354,19 +475,35 @@ export function ChordPadBoard() {
             />
           </Control>
 
+          {fromFiles ? (
+            <Control icon={<Waves aria-hidden className="size-3.5" />} label="Fondu">
+              <Slider
+                value={[crossfade]}
+                min={0.5}
+                max={12}
+                step={0.5}
+                thumbLabel="Duree du fondu entre tonalites"
+                onValueChange={([next]) => setCrossfade(next ?? crossfade)}
+              />
+              <p className="text-muted-foreground text-xs tabular-nums">
+                {crossfade.toFixed(1)} s entre deux tonalites
+              </p>
+            </Control>
+          ) : null}
+
           <Control icon={<Waves aria-hidden className="size-3.5" />} label="Douceur">
             <Slider
               value={[smoothness]}
               min={0.4}
               max={2.5}
               step={0.05}
-              disabled={sampled}
+              disabled={sampled || fromFiles}
               thumbLabel="Douceur du fondu"
               onValueChange={([next]) => setSmoothness(next ?? smoothness)}
             />
-            {sampled ? (
+            {sampled || fromFiles ? (
               <p className="text-muted-foreground text-xs">
-                Les fondus viennent de la banque : ce reglage ne s applique qu a la synthese.
+                Ce reglage ne s applique qu a la synthese.
               </p>
             ) : null}
           </Control>

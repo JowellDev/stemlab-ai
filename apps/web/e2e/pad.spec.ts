@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { type Page, expect, test } from '@playwright/test'
 import { signUp } from './helpers/track'
@@ -264,6 +266,120 @@ test.describe('echantillons', () => {
     await expect(page.getByRole('combobox', { name: /Instrument/i })).toBeVisible({
       timeout: 120_000,
     })
+
+    const { violations } = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze()
+
+    expect(violations.map((v) => `${v.id} — ${v.help}`)).toEqual([])
+  })
+})
+
+// --- nappes personnelles ---------------------------------------------------
+
+/**
+ * Deux fichiers reels, nommes comme le font les bibliotheques du commerce :
+ * la tonalite est dans le nom, et doit etre reconnue sans intervention.
+ */
+const PADS = [
+  join(import.meta.dirname, '../../../pad-previews/ambient-chords-pads-calming-soothing_F_major.wav'),
+  join(import.meta.dirname, '../../../pad-previews/heavenly-trap-chords-pads-dreamy_70bpm_F_major.wav'),
+]
+
+async function importPads(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Mes nappes' }).click()
+  await page.setInputFiles('input[aria-label="Fichiers de nappes"]', PADS)
+  await expect(page.getByTestId('pad-library').getByRole('listitem')).toHaveCount(2, {
+    timeout: 30_000,
+  })
+}
+
+test.describe('nappes personnelles', () => {
+  test.skip(!existsSync(PADS[0]!), 'aucun fichier de nappe dans pad-previews')
+
+  test('les fichiers importes gardent leur tonalite', async ({ page }) => {
+    await openPad(page)
+    await importPads(page)
+
+    const tonalites = page.getByTestId('pad-library').getByRole('combobox')
+    // `…_F_major.wav` : la tonalite est lisible dans le nom.
+    await expect(tonalites.first()).toHaveValue('5-major')
+    await expect(tonalites.nth(1)).toHaveValue('5-major')
+  })
+
+  test('une tonalite sans nappe est annoncee', async ({ page }) => {
+    await openPad(page)
+    await importPads(page)
+
+    // La page ouvre en do majeur, et aucune nappe ne couvre cette tonalite.
+    await expect(page.getByText(/Aucune nappe pour/)).toBeVisible()
+
+    await page
+      .getByRole('group', { name: 'Fondamentale' })
+      .getByRole('button', { name: 'F', exact: true })
+      .click()
+
+    await expect(page.getByText(/Aucune nappe pour/)).toBeHidden()
+  })
+
+  test('toucher un accord lit le fichier, pas des oscillateurs', async ({ page }) => {
+    await openPad(page)
+    await importPads(page)
+    await page
+      .getByRole('group', { name: 'Fondamentale' })
+      .getByRole('button', { name: 'F', exact: true })
+      .click()
+
+    // Le rangement du fichier precede son decodage : tant que l'avertissement
+    // est la, la nappe n'est pas encore jouable.
+    await expect(page.getByText(/Aucune nappe pour/)).toBeHidden({ timeout: 30_000 })
+
+    const avant = await countOscillators(page)
+    await page.evaluate(() => {
+      const start = AudioBufferSourceNode.prototype.start
+      const cible = globalThis as { __sources?: number }
+      cible.__sources = 0
+      AudioBufferSourceNode.prototype.start = function patched(
+        this: AudioBufferSourceNode,
+        ...args: Parameters<AudioBufferSourceNode['start']>
+      ) {
+        cible.__sources = (cible.__sources ?? 0) + 1
+        return start.apply(this, args)
+      }
+    })
+
+    await grid(page).first().click()
+
+    // Un fichier demarre, aucun oscillateur : la source est bien la bibliotheque.
+    await expect
+      .poll(() => page.evaluate(() => (globalThis as { __sources?: number }).__sources ?? 0))
+      .toBeGreaterThan(0)
+    expect(await countOscillators(page)).toBe(avant)
+  })
+
+  test('retirer une nappe la fait disparaitre', async ({ page }) => {
+    await openPad(page)
+    await importPads(page)
+
+    const premiere = page.getByTestId('pad-library').getByRole('listitem').first()
+    await premiere.getByRole('button', { name: /^Retirer / }).click()
+
+    await expect(page.getByTestId('pad-library').getByRole('listitem')).toHaveCount(1)
+  })
+
+  test('les reglages sans effet sur les fichiers sont desactives', async ({ page }) => {
+    await openPad(page)
+    await page.getByRole('button', { name: 'Mes nappes' }).click()
+
+    // Les fondus et le timbre appartiennent aux enregistrements : laisser ces
+    // reglages actifs mais sans effet serait trompeur.
+    await expect(page.getByRole('slider', { name: 'Douceur du fondu' })).toBeDisabled()
+    await expect(page.getByRole('slider', { name: /Duree du fondu/ })).toBeEnabled()
+  })
+
+  test('la bibliotheque respecte AA', async ({ page }) => {
+    await openPad(page)
+    await importPads(page)
 
     const { violations } = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

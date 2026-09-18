@@ -209,6 +209,7 @@ export class FakeAudioBuffer {
 
 export class FakeBufferSourceNode {
   buffer: FakeAudioBuffer | null = null
+  loop = false
   readonly playbackRate = new FakeAudioParam(1)
   onended: (() => void) | null = null
   readonly startCalls: StartCall[] = []
@@ -216,10 +217,15 @@ export class FakeBufferSourceNode {
   disconnected = false
   #started = false
 
-  connect(_destination: object): void {}
+  readonly connections = new Set<object>()
+
+  connect(destination: object): void {
+    this.connections.add(destination)
+  }
 
   disconnect(): void {
     this.disconnected = true
+    this.connections.clear()
   }
 
   start(when: number, offset = 0): void {

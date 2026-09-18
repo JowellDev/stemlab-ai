@@ -1,3 +1,4 @@
+export { keyId, parseKeyFromName, type ParsedKey } from './key-names.js'
 export {
   CHORD_INTERVALS,
   MIDDLE_C,
