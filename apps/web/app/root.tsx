@@ -14,7 +14,7 @@ export const links: Route.LinksFunction = () => [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr">
+    <html lang="fr" className="dark">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -51,13 +51,13 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   return (
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col justify-center gap-4 p-6">
       <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="text-neutral-400">{detail}</p>
+      <p className="text-muted-foreground">{detail}</p>
       {stack ? (
-        <pre className="overflow-x-auto rounded-lg bg-surface-1 p-4 text-xs text-neutral-400">
+        <pre className="overflow-x-auto rounded-lg bg-card p-4 text-xs text-muted-foreground">
           <code>{stack}</code>
         </pre>
       ) : null}
-      <a className="text-accent underline underline-offset-4" href="/">
+      <a className="text-brand underline underline-offset-4" href="/">
         Retour a l&apos;accueil
       </a>
     </main>

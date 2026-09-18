@@ -22,11 +22,11 @@ export function TimeDisplay({ player, duration }: TimeDisplayProps) {
   }, [player])
 
   return (
-    <p className="font-mono text-sm tabular-nums text-neutral-400">
+    <p className="font-mono text-sm tabular-nums text-muted-foreground">
       {/* aria-live retire volontairement : annoncer chaque dixieme de seconde
           rendrait le lecteur inutilisable au lecteur d'ecran. */}
       <span ref={ref}>0:00.0</span>
-      <span className="text-neutral-600"> / {formatTime(duration)}</span>
+      <span className="text-muted-foreground/70"> / {formatTime(duration)}</span>
     </p>
   )
 }

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "react-router dev --port 3000",
+    "dev": "react-router dev",
     "build": "react-router build",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc --noEmit",
@@ -13,19 +13,24 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1134.0",
+    "@aws-sdk/s3-request-presigner": "^3.1134.0",
     "@react-router/node": "^7.18.4",
     "@react-router/serve": "^7.18.4",
     "@stemlab/audio-engine": "workspace:*",
     "@stemlab/contracts": "workspace:*",
-    "clsx": "^2.1.1",
+    "@stemlab/database": "workspace:*",
+    "better-auth": "^1.7.5",
     "isbot": "^5.2.2",
     "lucide-react": "^1.47.0",
     "pg": "^8.23.0",
+    "radix-ui": "^1.6.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^7.18.4",
-    "tailwind-merge": "^3.7.0",
-    "zod": "^4.6.5"
+    "shadcn": "^4.21.0",
+    "zod": "^4.6.5",
+    "@stemlab/ui": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

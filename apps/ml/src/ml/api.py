@@ -31,6 +31,7 @@ from ml.schemas import (
 )
 from ml.security import SIGNATURE_HEADER, TIMESTAMP_HEADER, verify_signature
 from ml.settings import Settings, get_settings
+from ml.storage import ObjectNotFoundError, ObjectStore, StorageError, join_key
 from ml.webhook import WebhookDeliveryError, deliver
 from ml.worker import JOB_NAME, build_redis_settings
 
@@ -65,6 +66,7 @@ def create_app(
         application.state.redis = resolved_redis
         application.state.queue = resolved_queue
         application.state.store = JobStore(resolved_redis)
+        application.state.objects = ObjectStore(resolved_settings)
 
         logger.info("api.startup", version=__version__, model=resolved_settings.demucs_model)
         try:
@@ -154,13 +156,18 @@ async def create_job(request: Request) -> Response:
     # recoive exactement ce qu'il aurait recu.
     cached = await store.recall_result(payload.checksum, payload.model)
     if cached is not None:
-        await _replay(settings, payload, job_id, cached, store)
-        return JSONResponse(
-            CreateJobResponse(job_id=job_id, status="succeeded", deduplicated=True).model_dump(
-                by_alias=True
-            ),
-            status_code=status.HTTP_200_OK,
-        )
+        objects: ObjectStore = request.app.state.objects
+        replayed = await _replay(settings, payload, job_id, cached, store, objects)
+        if replayed:
+            return JSONResponse(
+                CreateJobResponse(job_id=job_id, status="succeeded", deduplicated=True).model_dump(
+                    by_alias=True
+                ),
+                status_code=status.HTTP_200_OK,
+            )
+        # Les stems memorises ont disparu du stockage : on oublie l'entree et on
+        # retraite normalement, plutot que de rendre un resultat inutilisable.
+        await store.forget_result(payload.checksum, payload.model)
 
     record = JobRecord(
         job_id=job_id,
@@ -224,8 +231,24 @@ async def _replay(
     job_id: str,
     cached: dict[str, Any],
     store: JobStore,
-) -> None:
-    """Rejoue le webhook de succes pour un resultat deja en cache."""
+    objects: ObjectStore,
+) -> bool:
+    """Rejoue un resultat deja en cache, sous le prefixe du nouveau demandeur.
+
+    Les stems memorises vivent sous le prefixe du premier traitement. Les rendre
+    tels quels donnerait au demandeur des cles qu'il ne possede pas — et que la
+    suppression de l'autre morceau ferait disparaitre sous ses pieds. Ils sont donc
+    recopies cote stockage, ce qui reste infiniment moins cher qu'une separation.
+
+    Renvoie `False` si la copie est impossible : l'appelant retraite alors le
+    morceau normalement.
+    """
+    try:
+        cached = _rehome_stems(cached, payload.output_prefix, objects)
+    except (ObjectNotFoundError, StorageError) as error:
+        logger.warning("jobs.replay_unavailable", job_id=job_id, error=str(error))
+        return False
+
     record = JobRecord(
         job_id=job_id,
         track_id=payload.track_id,
@@ -259,6 +282,24 @@ async def _replay(
         logger.info("jobs.deduplicated", job_id=job_id, checksum=payload.checksum)
     except WebhookDeliveryError as error:
         logger.error("jobs.replay_undelivered", job_id=job_id, error=str(error))
+    return True
+
+
+def _rehome_stems(
+    cached: dict[str, Any], output_prefix: str, objects: ObjectStore
+) -> dict[str, Any]:
+    """Recopie les stems memorises sous un nouveau prefixe et reecrit leurs cles."""
+    stems = cached.get("stems")
+    if not isinstance(stems, list):
+        raise StorageError("resultat memorise sans stems")
+
+    rehomed: list[dict[str, Any]] = []
+    for stem in stems:
+        destination = join_key(output_prefix, f"{stem['type']}.{stem['format']}")
+        uploaded = objects.copy(str(stem["key"]), destination)
+        rehomed.append({**stem, "key": uploaded.key, "bytes": uploaded.bytes})
+
+    return {**cached, "stems": rehomed}
 
 
 def _fields_from(error: ValidationError) -> dict[str, list[str]]:

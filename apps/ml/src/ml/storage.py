@@ -95,6 +95,46 @@ class ObjectStore:
             raise StorageError(f"envoi impossible de {key}") from error
         return UploadedObject(key=key, bytes=source.stat().st_size, content_type=content_type)
 
+    def copy(self, source_key: str, destination_key: str) -> UploadedObject:
+        """Copie un objet a l'interieur du bucket, sans le faire transiter par ici.
+
+        Utilise a la deduplication : un fichier deja traite voit ses stems recopies
+        sous le prefixe du nouveau demandeur, plutot que d'etre re-separe.
+        """
+        if source_key == destination_key:
+            return self.head(source_key)
+        try:
+            self._client.copy_object(
+                Bucket=self._bucket,
+                Key=destination_key,
+                CopySource={"Bucket": self._bucket, "Key": source_key},
+            )
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code", "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                raise ObjectNotFoundError(f"objet introuvable : {source_key}") from error
+            raise StorageError(f"copie impossible de {source_key}") from error
+        except BotoCoreError as error:
+            raise StorageError(f"copie impossible de {source_key}") from error
+        return self.head(destination_key)
+
+    def head(self, key: str) -> UploadedObject:
+        """Metadonnees d'un objet existant."""
+        try:
+            response = self._client.head_object(Bucket=self._bucket, Key=key)
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code", "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                raise ObjectNotFoundError(f"objet introuvable : {key}") from error
+            raise StorageError(f"lecture impossible de {key}") from error
+        except BotoCoreError as error:
+            raise StorageError(f"lecture impossible de {key}") from error
+        return UploadedObject(
+            key=key,
+            bytes=int(response.get("ContentLength", 0)),
+            content_type=str(response.get("ContentType", "application/octet-stream")),
+        )
+
     def exists(self, key: str) -> bool:
         try:
             self._client.head_object(Bucket=self._bucket, Key=key)

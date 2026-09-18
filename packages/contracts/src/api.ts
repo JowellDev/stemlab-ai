@@ -52,6 +52,8 @@ export const TrackSummary = z.object({
   status: TrackStatus,
   model: SeparationModel,
   progress: z.number().int().min(0).max(100),
+  /** Etape en cours, lisible par un humain. `null` hors traitement. */
+  stage: z.string().nullable(),
   errorMessage: z.string().nullable(),
   createdAt: z.iso.datetime(),
   key: z.string().nullable(),

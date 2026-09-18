@@ -70,6 +70,8 @@ Trois principes structurent le découpage :
 │  └─ ml/                  FastAPI + worker ARQ — Demucs, Essentia
 ├─ packages/
 │  ├─ contracts/           schémas Zod et types partagés (source de vérité des API)
+│  ├─ database/            schéma Prisma, migrations, client généré
+│  ├─ ui/                  composants shadcn/ui et thème partagé
 │  └─ audio-engine/        moteur Web Audio, sans dépendance à un framework
 ├─ infra/
 │  ├─ docker-compose.yml   stack de développement complète
@@ -200,6 +202,30 @@ curl -X POST http://127.0.0.1:8000/jobs \
 
 ---
 
+## Parcours applicatif
+
+```
+/signup, /login   →   /library   →   /tracks/:id
+                        │  dépôt direct sur S3 (URL présignée)
+                        │  suivi en direct (SSE)
+                        └─ lecteur multipiste
+```
+
+Les routes sont groupées par nature dans `apps/web/app/routes/` : `auth/`,
+`dashboard/`, `api/`. Les noms de pages et les URL sont en anglais ; les textes
+affichés sont en français.
+
+**L'audio ne transite jamais par l'application.** Le navigateur obtient une URL
+présignée, dépose le fichier directement sur le stockage objet, puis confirme. Le
+serveur ne fait que signer et orchestrer.
+
+> **Piège connu.** Le SDK AWS v3 joint par défaut un checksum CRC32 à chaque envoi.
+> Sur une URL présignée, le navigateur ne peut pas le produire et le dépôt échoue en
+> `BadDigest`. Le client S3 est donc configuré avec
+> `requestChecksumCalculation: 'WHEN_REQUIRED'`.
+
+---
+
 ## Déploiement
 
 _Détaillé en phase 9._ La cible : web et API sur **Fly.io** (deux régions, migrations
@@ -230,6 +256,14 @@ borne supérieure plus élevée.
 **Le worker refuse de démarrer : `'staticmethod' object has no attribute 'host'`.**
 `WorkerSettings.redis_settings` doit être une _instance_ de `RedisSettings`, pas une
 méthode. Elle est construite au chargement du module.
+
+**Le worker plante sur `ModuleNotFoundError: torch`.**
+`uv run` resynchronise l'environnement à chaque appel. Les dépendances lourdes sont
+pour cette raison un _groupe_ uv listé dans `tool.uv.default-groups`, pas un extra :
+un extra non demandé sur la ligne de commande serait désinstallé.
+
+**Un dépôt de fichier échoue en `BadDigest` ou `InvalidDigest`.**
+Le checksum CRC32 du SDK AWS v3 — voir la note dans « Parcours applicatif ».
 
 **Les modèles Demucs se re-téléchargent à chaque exécution.**
 Ils sont mis en cache dans `~/.cache/torch`. Sous Docker, ce chemin est monté sur le

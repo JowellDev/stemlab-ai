@@ -120,3 +120,41 @@ webhook vérifiant la signature.
 | Reprise après coupure | job terminé à l'essai 2, aucun stem manquant                         |
 
 **Tests** : 205 côté Python, 58 côté contrats. `ruff` et `mypy --strict` propres.
+
+---
+
+## Phase 4 — Auth, upload, bibliothèque (2026-09-18)
+
+**Definition of Done — vérifiée par exécution contre la stack réelle**
+
+| Critère                             | Vérification                                              |
+| ----------------------------------- | --------------------------------------------------------- |
+| better-auth opérationnel            | ✅ inscription, connexion, déconnexion, sessions en base  |
+| Upload direct par URL présignée     | ✅ l'audio ne transite jamais par l'application           |
+| Barre de progression                | ✅ XHR (`fetch` n'expose pas la progression d'envoi)      |
+| Validation type et taille           | ✅ 100 Mo, mp3/wav/flac/m4a/ogg ; refus testé             |
+| Bibliothèque avec statuts en direct | ✅ SSE, passage à « Prêt » sans rechargement              |
+| Suppression d'un morceau            | ✅ ligne et objets S3                                     |
+| Parcours complet Playwright         | ✅ inscription → upload → `ready` → lecture → suppression |
+
+**Mesures de l'exécution réelle**
+
+| Étape                           | Résultat                                 |
+| ------------------------------- | ---------------------------------------- |
+| Traitement d'un extrait de 15 s | 8,7 s, 4 stems                           |
+| Suite E2E complète              | 30 tests verts, desktop et mobile 390 px |
+
+**Non vérifié**
+
+- **OAuth Google** : le code est en place et ne s'active que si les identifiants sont
+  renseignés, mais aucun compte Google n'est disponible pour l'éprouver.
+- **Vérification de l'adresse électronique** : désactivée, faute de service d'envoi.
+  À activer en phase 8 avec le fournisseur retenu.
+- **Quotas par utilisateur** : le champ `plan` existe en base, l'application arrive en
+  phase 8.
+
+**Restructurations effectuées pendant la phase**
+
+- Prisma déplacé dans `packages/database`
+- Composants UI extraits dans `packages/ui`, sur shadcn/ui
+- Routes groupées (`auth/`, `dashboard/`, `api/`) et nommées en anglais

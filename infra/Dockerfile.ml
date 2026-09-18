@@ -15,7 +15,7 @@ WORKDIR /app
 FROM base AS deps
 COPY apps/ml/pyproject.toml apps/ml/uv.lock apps/ml/.python-version ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --extra ml
+    uv sync --frozen --no-install-project
 
 # ---- dev : sources montees en volume --------------------------------------
 FROM deps AS dev
@@ -26,6 +26,6 @@ CMD ["uv", "run", "uvicorn", "ml.api:app", "--host", "0.0.0.0", "--port", "8000"
 # ---- runtime --------------------------------------------------------------
 FROM deps AS runtime
 COPY apps/ml/ ./
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --extra ml
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen
 EXPOSE 8000
 CMD ["uv", "run", "uvicorn", "ml.api:app", "--host", "0.0.0.0", "--port", "8000"]

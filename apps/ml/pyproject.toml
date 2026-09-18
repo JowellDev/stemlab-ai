@@ -16,17 +16,9 @@ dependencies = [
     "soundfile>=0.13.1",
 ]
 
-[project.optional-dependencies]
-# Dependances lourdes (torch, demucs, essentia) : isolees pour que la CI et les
-# tests unitaires du service n'aient pas a les installer.
-ml = [
-    "torch>=2.5.0",
-    "torchaudio>=2.5.0",
-    "demucs>=4.0.1",
-    "essentia>=2.1b6.dev1110",
-]
-
 [tool.uv]
+default-groups = ["dev", "ml"]
+
 # Le verrou du depot cible le CPU : c'est ce qui tourne en developpement et en CI.
 # Les roues PyPI de torch embarquent les bibliotheques CUDA, soit environ 4 Go
 # inutiles ici. Le worker GPU est construit par Modal (infra/modal/), qui installe
@@ -41,6 +33,16 @@ torch = [{ index = "pytorch-cpu" }]
 torchaudio = [{ index = "pytorch-cpu" }]
 
 [dependency-groups]
+# Dependances lourdes du pipeline. En groupe plutot qu'en extra : `uv run`
+# resynchronise l'environnement a chaque appel et retirerait un extra non demande,
+# laissant le worker sans torch. Un groupe par defaut, lui, reste en place.
+ml = [
+    "torch>=2.5.0",
+    "torchaudio>=2.5.0",
+    "demucs>=4.0.1",
+    "essentia>=2.1b6.dev1110",
+]
+
 dev = [
     "pytest>=8.4.0",
     "pytest-asyncio>=1.3.0",

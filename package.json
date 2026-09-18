@@ -17,9 +17,10 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
     "services": "bash scripts/dev-services.sh",
-    "db:migrate": "pnpm --filter @stemlab/web exec prisma migrate dev",
-    "db:generate": "pnpm --filter @stemlab/web exec prisma generate",
-    "db:studio": "pnpm --filter @stemlab/web exec prisma studio"
+    "db:migrate": "pnpm --filter @stemlab/database migrate",
+    "db:generate": "pnpm --filter @stemlab/database generate",
+    "db:studio": "pnpm --filter @stemlab/database studio",
+    "db:deploy": "pnpm --filter @stemlab/database migrate:deploy"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1134.0",

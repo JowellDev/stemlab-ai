@@ -1,0 +1,225 @@
+// Schema de donnees STEMLAB.
+//
+// Deux familles de tables :
+//   - celles de better-auth (user, session, account, verification), dont la forme
+//     est imposee par la bibliotheque ;
+//   - celles du domaine (track, stem, analysis, job), qui nous appartiennent.
+//
+// Le BFF est le seul ecrivain : le worker ML rend ses resultats par webhook.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Authentification (better-auth)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  /// Plan d'abonnement : pilote les quotas (phase 8).
+  plan          Plan      @default(free)
+
+  sessions      Session[]
+  accounts      Account[]
+  tracks        Track[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// Domaine
+// ---------------------------------------------------------------------------
+
+enum Plan {
+  free
+  pro
+}
+
+enum TrackStatus {
+  uploaded
+  queued
+  processing
+  ready
+  failed
+}
+
+enum StemType {
+  vocals
+  drums
+  bass
+  guitar
+  piano
+  other
+}
+
+enum SeparationModel {
+  htdemucs
+  htdemucs_6s
+}
+
+enum JobStatus {
+  queued
+  running
+  succeeded
+  failed
+  cancelled
+}
+
+model Track {
+  id              String          @id @default(uuid())
+  title           String
+  artist          String?
+  durationSeconds Float?
+  /// SHA-256 du fichier source : cle d'idempotence du pipeline.
+  checksum        String
+  /// Cle S3 de l'original. Absente tant que l'upload n'est pas confirme.
+  sourceKey       String?
+  sourceBytes     Int?
+  contentType     String?
+  model           SeparationModel @default(htdemucs)
+  status          TrackStatus     @default(uploaded)
+  /// 0-100. Reflete la progression du job en cours.
+  progress        Int             @default(0)
+  stage           String?
+  errorMessage    String?
+  /// Peaks du mix complet, servis separement du HTML (cf. DECISIONS).
+  waveform        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  stems           Stem[]
+  analysis        Analysis?
+  jobs            Job[]
+
+  @@index([userId])
+  @@index([status])
+  /// Un meme utilisateur ne stocke pas deux fois le meme fichier avec le meme modele.
+  @@unique([userId, checksum, model])
+  @@map("track")
+}
+
+model Stem {
+  id        String   @id @default(uuid())
+  type      StemType
+  key       String
+  format    String
+  bytes     Int
+  waveform  Json
+  createdAt DateTime @default(now())
+
+  trackId   String
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([trackId, type])
+  @@index([trackId])
+  @@map("stem")
+}
+
+model Analysis {
+  trackId         String   @id
+  track           Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  key             String
+  mode            String
+  keyConfidence   Float
+  bpm             Float
+  firstBeatOffset Float
+  timeSignature   Json
+  /// [{start, end, label, root, quality, confidence}]
+  chords          Json
+  /// [{time, position}]
+  beats           Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("analysis")
+}
+
+model Job {
+  id                String    @id
+  type              String    @default("separate_and_analyze")
+  status            JobStatus @default(queued)
+  progress          Int       @default(0)
+  stage             String?
+  errorMessage      String?
+  attempt           Int       @default(0)
+  processingSeconds Float?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  startedAt         DateTime?
+  finishedAt        DateTime?
+
+  trackId           String
+  track             Track     @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([trackId])
+  @@index([status])
+  @@map("job")
+}

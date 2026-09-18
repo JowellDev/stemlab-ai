@@ -520,3 +520,134 @@ remettre en file immédiatement plutôt que bloquer l'arrêt jusqu'à dix minute
 | Redémarrage sans perte            | ✅                                             |
 
 **Tests** : 205 Python (dont 16 sur la machine à états du worker), 58 contrats.
+
+---
+
+# Phase 4 — Auth, upload, bibliothèque
+
+**2026-09-18** · branche `phase/04-library`
+
+## 4.1 — Le parcours à construire
+
+Inscription → dépôt d'un fichier → traitement → lecture multipiste → suppression.
+Tout le reste de la phase découle de cette chaîne.
+
+Deux principes tiennent l'architecture :
+
+1. **L'audio ne transite jamais par l'application.** Le navigateur envoie et récupère
+   les fichiers directement sur le stockage objet, par URL présignée. Le serveur ne
+   fait que signer. C'est ce qui permet d'accepter 100 Mo sans dimensionner le serveur
+   pour.
+2. **Le BFF est le seul écrivain de la base.** Le worker rend ses résultats par
+   webhook signé ; aucune autre porte d'entrée.
+
+## 4.2 — Le bug qui a coûté le plus cher
+
+Tout `PUT` vers une URL présignée était rejeté. `BadDigest` côté SeaweedFS. J'ai
+soupçonné l'implémentation S3 locale, téléchargé une alternative (Garage), monté un
+cluster complet, créé clés et bucket — pour découvrir **la même famille d'erreur** :
+`InvalidDigest ... algorithm Crc32`.
+
+C'est ce second message qui a donné la réponse : depuis fin 2024, le SDK AWS v3 joint
+un checksum CRC32 à chaque envoi. Sur une URL présignée, la signature exige alors un
+en-tête que le navigateur ne produit pas.
+
+```
+defaut-sdk             PUT -> 400 BadDigest
+checksum-si-requis     PUT -> 200 | GET -> 200 361787 o IDENTIQUE
+```
+
+Une ligne de configuration (`requestChecksumCalculation: 'WHEN_REQUIRED'`) et
+SeaweedFS fonctionnait parfaitement. La migration était inutile, et Garage a été
+retiré.
+
+**Ce que j'en retiens :** quand deux implémentations indépendantes échouent de la même
+façon, l'erreur est dans le code appelant. J'aurais dû réessayer la première avec le
+correctif avant d'en installer une seconde.
+
+## 4.3 — Trois bugs que seul le parcours complet pouvait révéler
+
+**Un clic avant l'hydratation.** Le test de bout en bout échouait par intermittence à
+l'inscription. Le clic arrivait avant que React n'ait attaché son gestionnaire : le
+formulaire partait en soumission native. Ce n'était pas un défaut du test — c'est ce
+que vit un utilisateur sur une connexion lente. L'inscription et la connexion sont
+passées en **actions serveur** : plus de course, et les deux formulaires fonctionnent
+sans JavaScript.
+
+**Un morceau bloqué en file.** Le service ML rejoue le webhook de succès _pendant_
+l'appel de création de job. Le morceau passait donc à `ready`, puis la transaction qui
+suivait le remettait à `queued`. Le statut est désormais posé **avant** l'appel, par
+une mise à jour conditionnelle qui n'écrase jamais un statut plus avancé.
+
+**Des stems appartenant à quelqu'un d'autre.** Le cache d'idempotence rendait des clés
+pointant vers le préfixe du _premier_ traitement. Le demandeur recevait des fichiers
+qu'il ne possède pas, et que la suppression de l'autre morceau ferait disparaître sous
+ses pieds. À la déduplication, les stems sont maintenant recopiés côté stockage sous
+le préfixe demandé — infiniment moins cher qu'une séparation GPU.
+
+**Un worker sans torch.** `ModuleNotFoundError: torch` alors que torch était installé :
+`uv run` resynchronise l'environnement à chaque appel et retire un extra non demandé
+sur cette ligne. Les dépendances lourdes sont passées d'un extra à un **groupe par
+défaut**.
+
+## 4.4 — Restructuration du monorepo
+
+Trois demandes en cours de phase, toutes appliquées :
+
+| Avant                         | Après                                                          |
+| ----------------------------- | -------------------------------------------------------------- |
+| Prisma dans `apps/web`        | **`packages/database`** — schéma, migrations, client, fabrique |
+| Composants UI dans `apps/web` | **`packages/ui`** — shadcn/ui et thème partagé                 |
+| Routes à plat, en français    | `routes/{auth,dashboard,api}/`, nommées en anglais             |
+
+**`@stemlab/database`** ne lit pas l'environnement : la chaîne de connexion lui est
+passée par l'application, qui l'a déjà validée. Une configuration incomplète échoue au
+démarrage, pas au premier accès à la base.
+
+**`@stemlab/ui`** adopte shadcn/ui pour de bon — composants générés par la CLI, jetons
+sémantiques, variante `dark`. Deux choses nous restent propres dans la feuille de
+style : la couleur de marque, et **une couleur par type de stem**, lue directement par
+le canvas des formes d'onde. L'interface et le tracé ne peuvent donc pas diverger.
+
+Point d'attention : `accent` est un jeton réservé par shadcn. Le cyan de STEMLAB a été
+renommé `brand`, et `--primary` pointe dessus.
+
+**Les routes** sont en anglais, URL comprises (`/login`, `/signup`, `/library`,
+`/tracks/:id`). Les textes affichés restent en français : c'est la langue du produit,
+pas celle du code.
+
+## 4.5 — Le flux d'état, et pourquoi il interroge la base
+
+La bibliothèque suit l'avancement sans rechargement. Le flux SSE **relit la base**
+toutes les 1,5 s et n'émet que les changements, plutôt que de s'appuyer sur un bus en
+mémoire.
+
+Ce choix mérite d'être explicite : le webhook du worker peut atterrir sur une instance
+et le flux vivre sur une autre — ce sera le cas dès le déploiement multi-région de la
+phase 9. Un bus en mémoire laisserait alors l'utilisateur devant une barre figée. Une
+requête indexée coûte moins cher qu'un bus distribué, et reste correcte quelle que
+soit la topologie.
+
+## 4.6 — Definition of Done
+
+Le test `e2e/journey.spec.ts` enchaîne le parcours complet contre la stack réelle —
+base, stockage objet, service ML et worker :
+
+| Étape            | Vérification                                                           |
+| ---------------- | ---------------------------------------------------------------------- |
+| Inscription      | ✅ compte créé, session posée, redirection vers la bibliothèque        |
+| Dépôt direct     | ✅ `init` → `PUT` présigné → `complete`, sans passer par l'application |
+| Validation       | ✅ un fichier texte est refusé sans quitter la page                    |
+| Traitement       | ✅ **job réel** : 8,7 s pour 15 s d'audio, 4 stems                     |
+| Suivi en direct  | ✅ passage à « Prêt » sans rechargement, par SSE                       |
+| Analyse affichée | ✅ tonalité et tempo remontés par le webhook                           |
+| Lecture          | ✅ 4 pistes chargées, transport fonctionnel, position qui avance       |
+| Suppression      | ✅ morceau et objets S3 retirés                                        |
+
+**Suite complète : 30 tests E2E verts**, sur deux formats dont 390 px, dont deux
+parcours complets avec traitement ML réel.
+
+Le test de dérive audio a par ailleurs été rendu tolérant à la charge : il
+échantillonnait pendant une durée fixe, ce qui échouait quand huit workers Playwright
+et un job ML se disputaient la machine. Il attend désormais que la lecture ait franchi
+deux secondes — même propriété vérifiée, sans hypothèse sur la vitesse de la machine.

@@ -1,7 +1,7 @@
+import { Slider, cn } from '@stemlab/ui'
 import type { MultitrackPlayer, StemMixState } from '@stemlab/audio-engine'
 import type { StemType, Waveform as WaveformData } from '@stemlab/contracts'
 import { Headphones, Volume2, VolumeX } from 'lucide-react'
-import { cn } from '~/lib/cn'
 import { STEM_LABELS, STEM_TEXT_CLASS } from '~/lib/stems'
 import { Waveform } from './waveform'
 
@@ -31,14 +31,14 @@ export function StemTrack({
       className={cn(
         'grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 rounded-lg border p-3 transition-colors',
         'sm:grid-cols-[9rem_auto_1fr]',
-        active ? 'border-accent/50 bg-surface-2' : 'border-surface-2 bg-surface-1',
+        active ? 'border-brand/50 bg-muted' : 'border-border bg-card',
       )}
       onPointerDown={() => onActivate(mix.type)}
     >
       <h3
         className={cn(
           'col-span-2 text-sm font-medium sm:col-span-1',
-          silenced ? 'text-neutral-500' : STEM_TEXT_CLASS[mix.type],
+          silenced ? 'text-muted-foreground' : STEM_TEXT_CLASS[mix.type],
         )}
       >
         {label}
@@ -53,8 +53,8 @@ export function StemTrack({
           className={cn(
             'rounded-md p-2 transition-colors',
             mix.muted
-              ? 'bg-neutral-200 text-surface-0'
-              : 'text-neutral-400 hover:bg-surface-3 hover:text-neutral-100',
+              ? 'bg-neutral-200 text-background'
+              : 'text-muted-foreground hover:bg-brand hover:text-foreground',
           )}
         >
           {mix.muted ? (
@@ -72,8 +72,8 @@ export function StemTrack({
           className={cn(
             'rounded-md p-2 transition-colors',
             mix.soloed
-              ? 'bg-accent text-surface-0'
-              : 'text-neutral-400 hover:bg-surface-3 hover:text-neutral-100',
+              ? 'bg-brand text-background'
+              : 'text-muted-foreground hover:bg-brand hover:text-foreground',
           )}
         >
           <Headphones aria-hidden className="size-4" />
@@ -81,14 +81,13 @@ export function StemTrack({
 
         <label className="ml-1 flex items-center">
           <span className="sr-only">Volume de la piste {label}</span>
-          <input
-            type="range"
+          <Slider
+            value={[mix.volume]}
             min={0}
             max={1}
             step={0.01}
-            value={mix.volume}
-            onChange={(event) => player?.setVolume(mix.type, event.target.valueAsNumber)}
-            className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-surface-3 accent-accent sm:w-24"
+            onValueChange={([value]) => player?.setVolume(mix.type, value ?? 0)}
+            className="w-20 sm:w-24"
           />
         </label>
       </div>

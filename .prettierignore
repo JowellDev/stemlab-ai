@@ -5,7 +5,7 @@ build
 dist
 .react-router
 node_modules
-apps/web/app/generated
+packages/database/src/generated
 coverage
 playwright-report
 .devservices
