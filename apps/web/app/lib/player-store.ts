@@ -14,6 +14,11 @@ export interface PlayerState {
   readonly stems: readonly StemMixState[]
   readonly progress: LoadProgress | null
   readonly error: Error | null
+  /**
+   * Faux quand le moteur d'etirement n'a pas pu etre charge : la lecture reste
+   * possible, mais la transposition n'agit que sur les libelles.
+   */
+  readonly supportsIndependentPitch: boolean
 }
 
 /** Etat rendu par le serveur : constant, pour que `useSyncExternalStore` n'y voie
@@ -25,6 +30,7 @@ export const SERVER_PLAYER_STATE: PlayerState = {
   stems: [],
   progress: null,
   error: null,
+  supportsIndependentPitch: true,
 }
 
 /**
@@ -91,13 +97,15 @@ export class PlayerStore {
           transport: event.state,
           duration: player.duration,
           stems: player.snapshot().stems,
+          supportsIndependentPitch: player.supportsIndependentPitch,
         }),
       ),
       player.on('mixchange', (event) => this.#set({ stems: event.stems })),
       player.on('loadprogress', (event) => this.#set({ progress: event.progress })),
+      player.on('fallback', () => this.#set({ supportsIndependentPitch: false })),
     ]
 
-    this.#set({ player, error: null })
+    this.#set({ player, error: null, supportsIndependentPitch: true })
 
     player.load(sources, { signal: controller.signal }).catch((cause: unknown) => {
       // Une annulation volontaire (demontage, changement de morceau) n'est pas une

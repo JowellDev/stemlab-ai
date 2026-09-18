@@ -98,6 +98,33 @@ export class FakeBufferSourceNode {
   }
 }
 
+export class FakeChannelSplitterNode {
+  readonly connections: Array<{ destination: object; output: number; input: number }> = []
+  disconnected = false
+
+  constructor(readonly channels: number) {}
+
+  connect(destination: object, output = 0, input = 0): void {
+    this.connections.push({ destination, output, input })
+  }
+
+  disconnect(): void {
+    this.disconnected = true
+  }
+}
+
+export class FakeChannelMergerNode {
+  disconnected = false
+
+  constructor(readonly channels: number) {}
+
+  connect(_destination: object): void {}
+
+  disconnect(): void {
+    this.disconnected = true
+  }
+}
+
 export class FakeAudioContext {
   currentTime = 0
   state: AudioContextState = 'running'
@@ -105,6 +132,8 @@ export class FakeAudioContext {
   readonly destination = { id: 'destination' }
   readonly createdSources: FakeBufferSourceNode[] = []
   readonly createdGains: FakeGainNode[] = []
+  readonly createdSplitters: FakeChannelSplitterNode[] = []
+  readonly createdMergers: FakeChannelMergerNode[] = []
   closed = false
 
   constructor(options: { sampleRate?: number } = {}) {
@@ -121,6 +150,18 @@ export class FakeAudioContext {
     const source = new FakeBufferSourceNode()
     this.createdSources.push(source)
     return source
+  }
+
+  createChannelSplitter(channels: number): FakeChannelSplitterNode {
+    const splitter = new FakeChannelSplitterNode(channels)
+    this.createdSplitters.push(splitter)
+    return splitter
+  }
+
+  createChannelMerger(channels: number): FakeChannelMergerNode {
+    const merger = new FakeChannelMergerNode(channels)
+    this.createdMergers.push(merger)
+    return merger
   }
 
   createBuffer(channels: number, length: number, sampleRate: number): FakeAudioBuffer {

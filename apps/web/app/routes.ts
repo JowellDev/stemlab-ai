@@ -4,6 +4,7 @@ export default [
   index('routes/home.tsx'),
   route('health', 'routes/health.ts'),
   route('dev/player', 'routes/dev.player.tsx'),
+  route('dev/drift', 'routes/dev.drift.tsx'),
 
   // Authentification. Les URL restent a la racine : ce sont des pages, pas une
   // section de l'application.

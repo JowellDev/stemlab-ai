@@ -1,8 +1,14 @@
-import { MAX_RATE, MIN_RATE, type StemSource } from '@stemlab/audio-engine'
+import {
+  MAX_RATE,
+  MAX_SEMITONES,
+  MIN_RATE,
+  MIN_SEMITONES,
+  type StemSource,
+} from '@stemlab/audio-engine'
 import type { AnalysisResult } from '@stemlab/contracts'
 import { pitchClassIndex } from '@stemlab/music'
 import { Alert, AlertDescription, Button, Slider } from '@stemlab/ui'
-import { Gauge } from 'lucide-react'
+import { Gauge, Info, Music2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChordPanel } from '~/components/chords/chord-panel'
 import { PlayerControls, type PlayerStem } from '~/components/player/player-controls'
@@ -28,7 +34,15 @@ export function TrackWorkspace({ title, subtitle, stems, analysis }: TrackWorksp
     () => stems.map(({ type, url }) => ({ type, url })),
     [stems],
   )
-  const { player, transport, duration, stems: mix, progress, error } = useMultitrackPlayer(sources)
+  const {
+    player,
+    transport,
+    duration,
+    stems: mix,
+    progress,
+    error,
+    supportsIndependentPitch,
+  } = useMultitrackPlayer(sources)
   const togglePlay = usePlayPause(player, transport)
 
   const [semitones, setSemitones] = useState(0)
@@ -42,10 +56,21 @@ export function TrackWorkspace({ title, subtitle, stems, analysis }: TrackWorksp
     [player],
   )
 
-  // Un nouveau lecteur repart au tempo original : on lui reapplique le reglage.
+  const onSemitonesChange = useCallback(
+    (value: number) => {
+      setSemitones(value)
+      player?.setSemitones(value)
+    },
+    [player],
+  )
+
+  // Un nouveau lecteur repart aux valeurs par defaut : on lui reapplique les
+  // reglages en cours.
   useEffect(() => {
-    if (player && rate !== 1) player.setPlaybackRate(rate)
-  }, [player, rate])
+    if (!player) return
+    if (rate !== 1) player.setPlaybackRate(rate)
+    if (semitones !== 0) player.setSemitones(semitones)
+  }, [player, rate, semitones])
 
   const keyRoot = useMemo(() => (analysis ? (pitchClassIndex(analysis.key) ?? 0) : 0), [analysis])
 
@@ -76,7 +101,7 @@ export function TrackWorkspace({ title, subtitle, stems, analysis }: TrackWorksp
           keyRoot={keyRoot}
           duration={duration || 1}
           semitones={semitones}
-          onSemitonesChange={setSemitones}
+          onSemitonesChange={onSemitonesChange}
           rate={rate}
         />
       ) : null}
@@ -90,10 +115,71 @@ export function TrackWorkspace({ title, subtitle, stems, analysis }: TrackWorksp
         onTogglePlay={togglePlay}
       />
 
-      <SpeedControl rate={rate} onChange={onRateChange} />
+      {!supportsIndependentPitch && transport !== 'idle' && transport !== 'loading' ? (
+        <Alert>
+          <Info />
+          <AlertDescription>
+            Le traitement audio avance n&apos;a pas pu etre charge sur ce navigateur. La lecture
+            fonctionne, mais changer le tempo modifie aussi la hauteur, et la transposition
+            n&apos;agit que sur les accords affiches.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="flex flex-col gap-2">
+        <SpeedControl rate={rate} onChange={onRateChange} />
+        <PitchControl
+          semitones={semitones}
+          onChange={onSemitonesChange}
+          disabled={!supportsIndependentPitch}
+        />
+      </div>
 
       <ShortcutLegend />
     </section>
+  )
+}
+
+function PitchControl({
+  semitones,
+  onChange,
+  disabled,
+}: {
+  semitones: number
+  onChange: (semitones: number) => void
+  disabled: boolean
+}) {
+  const label = semitones > 0 ? `+${semitones}` : String(semitones)
+
+  return (
+    <div className="bg-card flex items-center gap-3 rounded-lg border p-3">
+      <Music2 aria-hidden className="text-muted-foreground size-4 shrink-0" />
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <span className="text-muted-foreground shrink-0 text-sm">Hauteur</span>
+        <Slider
+          thumbLabel={`Hauteur : ${label} demi-tons`}
+          value={[semitones]}
+          min={MIN_SEMITONES}
+          max={MAX_SEMITONES}
+          step={1}
+          disabled={disabled}
+          onValueChange={([value]) => onChange(value ?? 0)}
+          className="min-w-0 flex-1"
+        />
+      </div>
+
+      <span className="w-12 shrink-0 text-right text-sm tabular-nums">{label}</span>
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={semitones === 0}
+        onClick={() => onChange(0)}
+      >
+        Original
+      </Button>
+    </div>
   )
 }
 
