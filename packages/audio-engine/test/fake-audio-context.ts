@@ -73,6 +73,7 @@ export class FakeAudioBuffer {
 
 export class FakeBufferSourceNode {
   buffer: FakeAudioBuffer | null = null
+  readonly playbackRate = new FakeAudioParam(1)
   onended: (() => void) | null = null
   readonly startCalls: StartCall[] = []
   stopped = false

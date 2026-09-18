@@ -412,3 +412,90 @@ describe('MultitrackPlayer — cycle de vie', () => {
     expect(() => player.destroy()).not.toThrow()
   })
 })
+
+describe('MultitrackPlayer — vitesse de lecture', () => {
+  let context: FakeAudioContext
+  let player: MultitrackPlayer
+
+  beforeEach(() => {
+    context = new FakeAudioContext()
+    player = makePlayer(context)
+    player.loadBuffers(makeStems())
+  })
+
+  it('demarre au tempo original', () => {
+    expect(player.playbackRate).toBe(1)
+  })
+
+  it('applique la vitesse aux sources deja en lecture', async () => {
+    await player.play()
+    player.setPlaybackRate(0.75)
+    for (const source of context.liveSources) {
+      expect(source.playbackRate.value).toBe(0.75)
+    }
+  })
+
+  it('applique la vitesse aux sources creees ensuite', async () => {
+    player.setPlaybackRate(1.25)
+    await player.play()
+    for (const source of context.liveSources) {
+      expect(source.playbackRate.value).toBe(1.25)
+    }
+  })
+
+  it('ne fait pas sauter la position au changement de vitesse', async () => {
+    await player.play()
+    context.advance(DEFAULT_LOOKAHEAD_SECONDS + 20)
+
+    const before = player.position
+    player.setPlaybackRate(0.5)
+    // Sans reancrage, les 20 s deja ecoulees seraient relues a la nouvelle
+    // vitesse et la position ferait un bond.
+    expect(player.position).toBeCloseTo(before, 9)
+  })
+
+  it('fait avancer la position au rythme demande', async () => {
+    await player.play()
+    context.advance(DEFAULT_LOOKAHEAD_SECONDS)
+    player.setPlaybackRate(0.5)
+
+    context.advance(10)
+    // A mi-vitesse, dix secondes d'horloge valent cinq secondes de morceau.
+    expect(player.position).toBeCloseTo(5, 9)
+  })
+
+  it('borne la vitesse aux valeurs jouables', () => {
+    player.setPlaybackRate(10)
+    expect(player.playbackRate).toBe(1.5)
+    player.setPlaybackRate(0.01)
+    expect(player.playbackRate).toBe(0.5)
+  })
+
+  it('ignore une vitesse non finie', () => {
+    player.setPlaybackRate(0.75)
+    player.setPlaybackRate(Number.NaN)
+    expect(player.playbackRate).toBe(1)
+  })
+
+  it('conserve la vitesse a la pause puis a la reprise', async () => {
+    await player.play()
+    player.setPlaybackRate(0.8)
+    player.pause()
+    expect(player.playbackRate).toBe(0.8)
+
+    await player.play()
+    expect(player.playbackRate).toBe(0.8)
+    for (const source of context.liveSources) {
+      expect(source.playbackRate.value).toBe(0.8)
+    }
+  })
+
+  it('conserve la vitesse apres un seek', async () => {
+    await player.play()
+    player.setPlaybackRate(1.25)
+    player.seek(42)
+
+    expect(player.playbackRate).toBe(1.25)
+    expect(player.position).toBe(42)
+  })
+})

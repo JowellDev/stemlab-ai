@@ -26,6 +26,7 @@ def build_grid(
     loudness: npt.NDArray[np.float32] | None = None,
     numerator: int = 4,
     denominator: int = 4,
+    chord_starts: list[float] | None = None,
 ) -> BeatGrid:
     """Numerote les temps dans la mesure.
 
@@ -51,7 +52,12 @@ def build_grid(
     if not ordered:
         return BeatGrid(numerator, denominator, 0.0, [])
 
-    phase = _choose_phase(ordered, loudness, numerator)
+    # Les changements d'accord priment sur l'energie : une harmonie change presque
+    # toujours sur un temps fort, alors qu'une batterie reguliere donne la meme
+    # energie a tous les temps et ne permet pas de trancher.
+    phase = _choose_phase_from_chords(ordered, chord_starts, numerator)
+    if phase is None:
+        phase = _choose_phase(ordered, loudness, numerator)
 
     beats = [
         (round(time, 4), ((index - phase) % numerator) + 1) for index, time in enumerate(ordered)
@@ -69,6 +75,45 @@ def build_grid(
 
 #: Ecart relatif minimal entre la meilleure phase et la moyenne des autres.
 PHASE_MARGIN = 0.15
+
+#: Avance minimale, en nombre de changements d'accord, pour retenir une phase.
+CHORD_PHASE_MARGIN = 2
+
+#: Tolerance d'alignement entre un changement d'accord et un temps, en fraction
+#: de l'intervalle entre deux temps.
+CHORD_SNAP_RATIO = 0.4
+
+
+def _choose_phase_from_chords(
+    ordered: list[float], chord_starts: list[float] | None, numerator: int
+) -> int | None:
+    """Phase qui place le plus de changements d'accord sur un temps fort.
+
+    Renvoie `None` quand l'indice est trop faible pour trancher : trop peu de
+    changements, ou plusieurs phases a egalite.
+    """
+    if not chord_starts or len(ordered) < numerator:
+        return None
+
+    beats = np.asarray(ordered, dtype=np.float64)
+    spacing = float(np.median(np.diff(beats))) if beats.size > 1 else 0.0
+    if spacing <= 0.0:
+        return None
+    tolerance = spacing * CHORD_SNAP_RATIO
+
+    counts = np.zeros(numerator, dtype=np.int64)
+    for start in chord_starts:
+        index = int(np.argmin(np.abs(beats - start)))
+        if abs(float(beats[index]) - start) > tolerance:
+            continue
+        counts[index % numerator] += 1
+
+    best = int(np.argmax(counts))
+    others = np.delete(counts, best)
+    if counts[best] == 0 or counts[best] - int(np.max(others)) < CHORD_PHASE_MARGIN:
+        return None
+    return best
+
 
 #: Nombre minimal de mesures completes avant de se fier a l'energie.
 MIN_BARS_FOR_PHASE = 2

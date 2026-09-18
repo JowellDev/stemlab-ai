@@ -20,6 +20,8 @@
     "@stemlab/audio-engine": "workspace:*",
     "@stemlab/contracts": "workspace:*",
     "@stemlab/database": "workspace:*",
+    "@stemlab/music": "workspace:*",
+    "@stemlab/ui": "workspace:*",
     "better-auth": "^1.7.5",
     "isbot": "^5.2.2",
     "lucide-react": "^1.47.0",
@@ -29,8 +31,7 @@
     "react-dom": "^19.3.0",
     "react-router": "^7.18.4",
     "shadcn": "^4.21.0",
-    "zod": "^4.6.5",
-    "@stemlab/ui": "workspace:*"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

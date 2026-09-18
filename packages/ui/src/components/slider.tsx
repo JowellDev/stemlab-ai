@@ -2,14 +2,27 @@ import * as React from 'react'
 import { cn } from '../lib/utils.js'
 import { Slider as SliderPrimitive } from 'radix-ui'
 
+interface SliderProps extends React.ComponentProps<typeof SliderPrimitive.Root> {
+  /**
+   * Libelle de chaque poignee.
+   *
+   * C'est la poignee qui porte le role `slider`, pas la racine : un `aria-label`
+   * pose sur le composant n'atteint donc aucune technologie d'assistance. Pour un
+   * curseur a plusieurs poignees, passer un libelle par poignee.
+   */
+  thumbLabel?: string | readonly string[]
+}
+
 function Slider({
   className,
   defaultValue,
   value,
   min = 0,
   max = 100,
+  thumbLabel,
+  'aria-label': ariaLabel,
   ...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+}: SliderProps) {
   const _values = React.useMemo(
     () => (Array.isArray(value) ? value : Array.isArray(defaultValue) ? defaultValue : [min, max]),
     [value, defaultValue, min, max],
@@ -41,11 +54,20 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
+          aria-label={thumbLabelAt(thumbLabel ?? ariaLabel, index)}
           className="relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
         />
       ))}
     </SliderPrimitive.Root>
   )
+}
+
+function thumbLabelAt(
+  label: string | readonly string[] | undefined,
+  index: number,
+): string | undefined {
+  if (label === undefined) return undefined
+  return Array.isArray(label) ? label[index] : (label as string)
 }
 
 export { Slider }

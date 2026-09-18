@@ -25,7 +25,11 @@ export function TimeDisplay({ player, duration }: TimeDisplayProps) {
     <p className="font-mono text-sm tabular-nums text-muted-foreground">
       {/* aria-live retire volontairement : annoncer chaque dixieme de seconde
           rendrait le lecteur inutilisable au lecteur d'ecran. */}
-      <span ref={ref}>0:00.0</span>
+      {/* Identifiant stable : les tests lisent la position ici plutot que par
+          une classe utilitaire, qui change au gre du style. */}
+      <span ref={ref} data-testid="playback-position">
+        0:00.0
+      </span>
       <span className="text-muted-foreground/70"> / {formatTime(duration)}</span>
     </p>
   )

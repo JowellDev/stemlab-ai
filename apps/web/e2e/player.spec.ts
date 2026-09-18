@@ -1,4 +1,5 @@
-import { type Page, expect, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+import { readPosition } from './helpers/position'
 
 /**
  * Verification du lecteur dans un vrai navigateur.
@@ -134,11 +135,3 @@ test('un clic dans la barre de transport deplace la lecture', async ({ page }) =
 })
 
 /** Lit la position exposee par le moteur, pas le texte affiche. */
-async function readPosition(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const element = document.querySelector('span.tabular-nums, p.tabular-nums span')
-    const text = element?.textContent ?? '0:00.0'
-    const [minutes, seconds] = text.split(':')
-    return Number(minutes ?? 0) * 60 + Number(seconds ?? 0)
-  })
-}

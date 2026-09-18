@@ -1,8 +1,9 @@
-import { Waveform as WaveformSchema } from '@stemlab/contracts'
+import { AnalysisResult, Waveform as WaveformSchema } from '@stemlab/contracts'
 import { ArrowLeft } from 'lucide-react'
 import { Link, redirect } from 'react-router'
 import { AppShell } from '~/components/app-shell'
-import { MultitrackPlayerView, type PlayerStem } from '~/components/player/multitrack-player-view'
+import type { PlayerStem } from '~/components/player/player-controls'
+import { TrackWorkspace } from '~/components/track-workspace'
 import { db } from '~/lib/db.server'
 import { DOWNLOAD_URL_TTL_SECONDS, presignDownload } from '~/lib/s3.server'
 import { requireUser } from '~/lib/session.server'
@@ -29,7 +30,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       durationSeconds: true,
       status: true,
       stems: { select: { type: true, key: true, waveform: true }, orderBy: { type: 'asc' } },
-      analysis: { select: { key: true, mode: true, bpm: true, keyConfidence: true } },
+      analysis: true,
     },
   })
 
@@ -46,6 +47,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   )
 
+  // L'analyse est revalidee par le meme schema que celui du pipeline : ce qui est
+  // en base a pu y entrer avant une evolution du format.
+  const parsed = track.analysis
+    ? AnalysisResult.safeParse({
+        key: track.analysis.key,
+        mode: track.analysis.mode,
+        keyConfidence: track.analysis.keyConfidence,
+        bpm: track.analysis.bpm,
+        firstBeatOffset: track.analysis.firstBeatOffset,
+        timeSignature: track.analysis.timeSignature,
+        beats: track.analysis.beats,
+        chords: track.analysis.chords,
+      })
+    : null
+
+  if (parsed && !parsed.success) {
+    console.warn('analyse illisible', { trackId: track.id, issues: parsed.error.issues })
+  }
+
   return {
     user,
     track: {
@@ -53,41 +73,33 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: track.title,
       artist: track.artist,
       durationSeconds: track.durationSeconds,
-      analysis: track.analysis,
     },
+    analysis: parsed?.success ? parsed.data : null,
     stems,
     urlsExpireAt: new Date(Date.now() + DOWNLOAD_URL_TTL_SECONDS * 1000).toISOString(),
   }
 }
 
-export default function Morceau({ loaderData }: Route.ComponentProps) {
-  const { user, track, stems } = loaderData
-
-  const subtitle = [
-    track.artist,
-    track.analysis
-      ? `${track.analysis.key} ${track.analysis.mode === 'minor' ? 'mineur' : 'majeur'}`
-      : null,
-    track.analysis ? `${Math.round(track.analysis.bpm)} BPM` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+export default function Track({ loaderData }: Route.ComponentProps) {
+  const { user, track, stems, analysis } = loaderData
+  const subtitle = track.artist ?? undefined
 
   return (
     <AppShell user={user}>
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         <Link
           to="/library"
-          className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1.5 text-sm"
         >
           <ArrowLeft aria-hidden className="size-4" />
           Ma bibliotheque
         </Link>
 
-        <MultitrackPlayerView
+        <TrackWorkspace
           title={track.title}
           {...(subtitle ? { subtitle } : {})}
           stems={stems}
+          analysis={analysis}
         />
       </main>
     </AppShell>

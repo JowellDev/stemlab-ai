@@ -14,7 +14,7 @@ export function AppShell({ user, children }: AppShellProps) {
     <div className="flex min-h-dvh flex-col">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <Link to="/library" className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
             <AudioLines aria-hidden className="size-5 text-brand" />
             <span className="font-mono text-xs uppercase tracking-[0.3em] text-brand">STEMLAB</span>
           </Link>

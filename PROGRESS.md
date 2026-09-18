@@ -158,3 +158,36 @@ webhook vérifiant la signature.
 - Prisma déplacé dans `packages/database`
 - Composants UI extraits dans `packages/ui`, sur shadcn/ui
 - Routes groupées (`auth/`, `dashboard/`, `api/`) et nommées en anglais
+
+---
+
+## Phase 5 — Accords, tonalité, tempo (2026-09-18)
+
+**Definition of Done — vérifiée par exécution**
+
+La propriété testée est auto-référente : l'accord mis en avant doit contenir la
+position de lecture dans ses propres bornes. Elle vaut quelle que soit la cause d'un
+désalignement.
+
+| Critère                                       | Vérification                                |
+| --------------------------------------------- | ------------------------------------------- |
+| Accords synchronisés à la lecture             | ✅                                          |
+| Alignement conservé après seek                | ✅ quatre positions successives             |
+| Alignement conservé après changement de tempo | ✅ à 75 % puis 125 %                        |
+| Alignement conservé après transposition       | ✅ bornes inchangées                        |
+| Grille de mesures                             | ✅ phase calée sur les changements d'accord |
+| Tonalité et BPM en en-tête                    | ✅ valeurs entendues, pas analysées         |
+| Transposition des libellés                    | ✅ orthographe selon l'armure obtenue       |
+| Défilement automatique                        | ✅                                          |
+| Vue grille et vue ligne de temps              | ✅                                          |
+
+**Tests** : 58 unitaires (`@stemlab/music`), 86 (`@stemlab/audio-engine`),
+48 E2E sur deux formats dont 390 px.
+
+**Non vérifié / reporté**
+
+- **Le changement de tempo déplace encore la hauteur** : l'implémentation agit sur le
+  `playbackRate` des sources. La phase 6 la remplace par un AudioWorklet SoundTouch,
+  qui dissocie tempo et hauteur — l'API exposée ne change pas.
+- **La transposition ne modifie pas encore l'audio**, seulement les libellés. Même
+  échéance.

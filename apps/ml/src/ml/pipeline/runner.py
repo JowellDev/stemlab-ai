@@ -117,12 +117,19 @@ def analyze(
     key = analysis_module.estimate_key(mono)
     rhythm = analysis_module.estimate_rhythm(mono)
 
-    loudness = beat_loudness(mono, audio.sample_rate, rhythm.beats)
-    grid = build_grid(rhythm.beats, loudness)
-
     harmonic = mix_harmonic_stems(stems)
     chroma, frame_times = analysis_module.compute_chroma(harmonic, audio.sample_rate)
     chords = estimate_chords(chroma, frame_times, rhythm.beats)
+
+    # La grille de mesures est construite apres les accords : leurs changements
+    # designent les temps forts bien plus surement que l'energie, qu'une batterie
+    # reguliere repartit uniformement.
+    loudness = beat_loudness(mono, audio.sample_rate, rhythm.beats)
+    grid = build_grid(
+        rhythm.beats,
+        loudness,
+        chord_starts=[segment.start for segment in chords[1:]],
+    )
 
     # Les accords tranchent entre une tonalite et son relatif, que le profil de
     # hauteurs seul ne peut pas distinguer.

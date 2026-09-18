@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type Page, expect, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+import { readPosition } from './helpers/position'
 
 /**
  * Parcours complet : inscription -> envoi -> traitement -> lecture.
@@ -69,7 +70,7 @@ test('inscription, envoi, traitement puis lecture', async ({ page }) => {
   // --- lecture -------------------------------------------------------------
   await card.getByRole('link', { name: /electro/i }).click()
 
-  await expect(page.getByText('Pret', { exact: true })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole('button', { name: 'Lire' })).toBeEnabled({ timeout: 60_000 })
   for (const label of ['Voix', 'Batterie', 'Basse', 'Autres']) {
     await expect(page.getByRole('heading', { name: label, exact: true })).toBeVisible()
   }
@@ -104,11 +105,3 @@ test('un fichier non audio est refuse sans quitter la page', async ({ page }) =>
   await expect(page.getByRole('alert')).toContainText('Format non pris en charge')
   await expect(page.getByText('Aucun morceau pour le moment.')).toBeVisible()
 })
-
-async function readPosition(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const text = document.querySelector('p.tabular-nums span')?.textContent ?? '0:00.0'
-    const [minutes = '0', seconds = '0'] = text.split(':')
-    return Number(minutes) * 60 + Number(seconds)
-  })
-}
