@@ -57,8 +57,12 @@ def test_serialise_en_camel_case() -> None:
         "stems",
         "analysis",
         "waveform",
+        "lyrics",
         "processingSeconds",
     }
+    # Absentes par defaut : un morceau instrumental n'a rien a transcrire, et le
+    # champ doit traverser la frontiere plutot que d'y manquer.
+    assert payload["lyrics"] is None
     assert payload["analysis"]["keyConfidence"] == 0.82
     assert payload["analysis"]["firstBeatOffset"] == 0.0
     assert payload["analysis"]["timeSignature"] == {"numerator": 4, "denominator": 4}

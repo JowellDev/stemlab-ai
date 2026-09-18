@@ -41,6 +41,16 @@ ml = [
     "torchaudio>=2.5.0",
     "demucs>=4.0.1",
     "essentia>=2.1b6.dev1110",
+    # Transcription des paroles. `faster-whisper` (MIT) plutot que le paquet
+    # `openai-whisper` : meme modele, execution par CTranslate2, plusieurs fois
+    # plus rapide sur processeur — ce qui compte quand aucun GPU n'est garanti.
+    "faster-whisper>=1.2.0",
+    # Traduction francais <-> anglais. Les modeles OPUS-MT sont petits et sous
+    # licence permissive, la ou NLLB-200 est non commercial — exclu par la meme
+    # contrainte que madmom.
+    "transformers>=4.57.0",
+    "sentencepiece>=0.2.0",
+    "sacremoses>=0.1.1",
 ]
 
 dev = [
@@ -81,7 +91,16 @@ files = ["src", "tests"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["demucs.*", "essentia.*", "torch.*", "torchaudio.*", "soundfile.*", "arq.*"]
+module = [
+    "demucs.*",
+    "essentia.*",
+    "torch.*",
+    "torchaudio.*",
+    "soundfile.*",
+    "arq.*",
+    "faster_whisper.*",
+    "transformers.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

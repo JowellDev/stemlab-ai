@@ -189,6 +189,9 @@ async def _execute(
             device=settings.torch_device,
             opus_bitrate=settings.stem_opus_bitrate,
             points_per_second=settings.waveform_points_per_second,
+            transcribe_lyrics=settings.transcribe_lyrics,
+            whisper_model=settings.whisper_model,
+            translate_to=settings.translation_targets,
         )
 
         try:

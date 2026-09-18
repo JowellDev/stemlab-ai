@@ -1,10 +1,11 @@
-import { AnalysisResult, Waveform as WaveformSchema } from '@stemlab/contracts'
+import { AnalysisResult, Lyrics, Waveform as WaveformSchema } from '@stemlab/contracts'
 import { ArrowLeft } from 'lucide-react'
 import { Link, redirect } from 'react-router'
 import { AppShell } from '~/components/app-shell'
 import type { PlayerStem } from '~/components/player/player-controls'
 import { TrackWorkspace } from '~/components/track-workspace'
 import { db } from '~/lib/db.server'
+import { logger } from '~/lib/logger.server'
 import { DOWNLOAD_URL_TTL_SECONDS, presignDownload } from '~/lib/s3.server'
 import { requireUser } from '~/lib/session.server'
 import type { Route } from './+types/track.$trackId'
@@ -34,6 +35,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         orderBy: { type: 'asc' },
       },
       analysis: true,
+      lyrics: true,
     },
   })
 
@@ -66,7 +68,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     : null
 
   if (parsed && !parsed.success) {
-    console.warn('analyse illisible', { trackId: track.id, issues: parsed.error.issues })
+    logger.warn('analyse illisible', { trackId: track.id, issues: parsed.error.issues })
+  }
+
+  // Meme precaution pour les paroles : elles ont pu entrer en base avant une
+  // evolution du format, et une ligne mal formee ne doit pas emporter la page.
+  const parsedLyrics = track.lyrics
+    ? Lyrics.safeParse({
+        language: track.lyrics.language,
+        languageConfidence: track.lyrics.languageConfidence,
+        lines: track.lyrics.lines,
+        translations: track.lyrics.translations,
+      })
+    : null
+
+  if (parsedLyrics && !parsedLyrics.success) {
+    logger.warn('paroles illisibles', { trackId: track.id, issues: parsedLyrics.error.issues })
   }
 
   return {
@@ -81,13 +98,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       durationSeconds: track.durationSeconds,
     },
     analysis: parsed?.success ? parsed.data : null,
+    lyrics: parsedLyrics?.success ? parsedLyrics.data : null,
     stems,
     urlsExpireAt: new Date(Date.now() + DOWNLOAD_URL_TTL_SECONDS * 1000).toISOString(),
   }
 }
 
 export default function Track({ loaderData }: Route.ComponentProps) {
-  const { user, track, stems, analysis, formats } = loaderData
+  const { user, track, stems, analysis, lyrics, formats } = loaderData
   const subtitle = track.artist ?? undefined
 
   return (
@@ -107,6 +125,7 @@ export default function Track({ loaderData }: Route.ComponentProps) {
           {...(subtitle ? { subtitle } : {})}
           stems={stems}
           analysis={analysis}
+          lyrics={lyrics}
           formats={formats}
         />
       </main>

@@ -1,3 +1,4 @@
+export * from './lyrics.js'
 export * from './plans.js'
 export * from './primitives.js'
 export * from './music.js'

@@ -27,6 +27,25 @@ demucs_required = pytest.mark.skipif(
     not _module_available("demucs"), reason="demucs absent (installer l'extra `ml`)"
 )
 
+whisper_required = pytest.mark.skipif(
+    not _module_available("faster_whisper"),
+    reason="faster-whisper absent (installer le groupe `ml`)",
+)
+
+transformers_required = pytest.mark.skipif(
+    not _module_available("transformers"),
+    reason="transformers absent (installer le groupe `ml`)",
+)
+
+#: Extrait de voix du domaine public : le clip de test de Whisper, un discours de
+#: 1961. Un morceau de synthese n'a pas de paroles, et la transcription doit etre
+#: verifiee sur de la vraie voix.
+SPEECH_FIXTURE = Path(__file__).parent.parent.parent.parent / "fixtures/tracks/discours-en.flac"
+
+speech_fixture_required = pytest.mark.skipif(
+    not SPEECH_FIXTURE.exists(), reason="extrait de voix absent des fixtures"
+)
+
 
 @pytest.fixture
 def make_tone(tmp_path: Path) -> Callable[..., Path]:

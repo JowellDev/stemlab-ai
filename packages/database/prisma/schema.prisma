@@ -156,6 +156,7 @@ model Track {
 
   stems           Stem[]
   analysis        Analysis?
+  lyrics          Lyrics?
   jobs            Job[]
 
   @@index([userId])
@@ -180,6 +181,27 @@ model Stem {
   @@unique([trackId, type])
   @@index([trackId])
   @@map("stem")
+}
+
+/// Paroles transcrites depuis le stem de voix, et leurs traductions.
+///
+/// Table distincte de `Analysis` : la transcription peut echouer, etre desactivee
+/// ou porter sur un instrumental sans que l'analyse harmonique en patisse.
+model Lyrics {
+  trackId            String   @id
+  track              Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  /// Code ISO 639-1, ou `null` quand la detection n'est pas assez sure.
+  language           String?
+  languageConfidence Float
+  /// [{start, end, text, words: [{start, end, text}]}]
+  lines              Json
+  /// { "<langue>": ["<ligne>", …] } — une entree par ligne, dans le meme ordre.
+  translations       Json
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("lyrics")
 }
 
 model Analysis {

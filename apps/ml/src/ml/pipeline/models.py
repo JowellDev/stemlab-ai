@@ -61,6 +61,29 @@ class AnalysisResult(CamelModel):
     chords: list[Chord]
 
 
+class LyricWord(CamelModel):
+    start: Seconds
+    end: Seconds
+    text: Annotated[str, Field(min_length=1, max_length=64)]
+
+
+class LyricLine(CamelModel):
+    start: Seconds
+    end: Seconds
+    text: Annotated[str, Field(min_length=1, max_length=512)]
+    #: Vide quand le modele n'a pas su decouper la ligne.
+    words: list[LyricWord]
+
+
+class Lyrics(CamelModel):
+    #: Code ISO 639-1, ou `None` quand la detection n'est pas assez sure.
+    language: str | None
+    language_confidence: Confidence
+    lines: list[LyricLine]
+    #: Par code de langue cible, une traduction par ligne, dans le meme ordre.
+    translations: dict[str, list[str]]
+
+
 class StemArtifact(CamelModel):
     type: StemType
     #: Cle S3 en production ; chemin relatif au dossier de sortie en mode CLI.
@@ -78,4 +101,6 @@ class PipelineResult(CamelModel):
     stems: list[StemArtifact]
     analysis: AnalysisResult
     waveform: Waveform
+    #: `None` pour un morceau instrumental, ou quand la transcription est desactivee.
+    lyrics: Lyrics | None = None
     processing_seconds: Seconds
