@@ -50,6 +50,11 @@ jobs:
       - name: aucun secret dans le bundle client
         run: pnpm check:bundle
 
+      # N'echoue pas : une migration destructive est parfois le bon choix. Elle
+      # doit simplement etre vue avant d'etre fusionnee.
+      - name: le retour arriere reste possible
+        run: node scripts/check-migrations.mjs
+
   e2e:
     name: end-to-end
     runs-on: ubuntu-latest

@@ -66,3 +66,24 @@ test('sans session, les routes d API refusent', async ({ request }) => {
   const stems = await request.get('/api/tracks/00000000-0000-4000-8000-000000000000/stems')
   expect(stems.status()).toBe(401)
 })
+
+test('la page legale enonce les engagements sur les fichiers', async ({ page }) => {
+  await page.goto('/legal')
+
+  await expect(page.getByRole('heading', { name: "Conditions d'utilisation" })).toBeVisible()
+
+  // Les trois engagements exiges : usage personnel, aucun partage, suppression.
+  await expect(page.getByRole('heading', { name: 'Usage strictement personnel' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Aucun partage public' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Suppression' })).toBeVisible()
+
+  await expect(page.getByText(/ni partage public, ni catalogue, ni bibliotheque commune/)).toBeVisible()
+  await expect(page.getByText(/traitee sous trente jours/)).toBeVisible()
+})
+
+test('la page legale est atteignable depuis l application', async ({ page }) => {
+  await signUp(page, 'mentions')
+
+  await page.getByRole('contentinfo').getByRole('link', { name: "Conditions d'utilisation" }).click()
+  await expect(page.getByRole('heading', { name: "Conditions d'utilisation" })).toBeVisible()
+})

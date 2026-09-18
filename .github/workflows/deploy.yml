@@ -1,0 +1,114 @@
+# Mise en production, sur poussee vers `main`.
+#
+# Le deploiement ne part qu'apres l'integration continue : le workflow attend
+# explicitement son succes plutot que de refaire les verifications, faute de quoi
+# une regression connue partirait en production pendant que la CI la signale.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: ['ci']
+    branches: [main]
+    types: [completed]
+  # Permet de rejouer un deploiement — ou d'en revenir — sans nouvelle poussee.
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  # Un deploiement en cours n'est jamais interrompu : l'annuler entre la
+  # migration et la bascule du trafic laisserait le schema en avance sur le code.
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: verification de l'environnement
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      # Une cle manquante ou restee a sa valeur d'exemple ne se voit qu'apres la
+      # bascule du trafic. Mieux vaut echouer ici.
+      - name: configuration de production complete
+        run: node scripts/preflight.mjs --env-only
+        env:
+          NODE_ENV: production
+          APP_URL: ${{ vars.APP_URL }}
+          BETTER_AUTH_URL: ${{ vars.APP_URL }}
+          ML_API_URL: ${{ vars.ML_API_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          ML_WEBHOOK_SECRET: ${{ secrets.ML_WEBHOOK_SECRET }}
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+  web:
+    name: application web
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Les migrations sont jouees par le `release_command` declare dans
+      # `web.toml`, avant la bascule du trafic — pas au demarrage des instances,
+      # ou deux machines migreraient en concurrence.
+      - name: deploiement
+        run: flyctl deploy --config infra/fly/web.toml --remote-only --wait-timeout 600
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: l'application repond
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS "${{ vars.APP_URL }}/health" > /dev/null; then
+              echo "sonde OK a la tentative $attempt"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::l'application ne repond pas apres le deploiement"
+          exit 1
+
+  ml:
+    name: service ML
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: deploiement de l'API
+        run: flyctl deploy --config infra/fly/ml.toml --remote-only --wait-timeout 600
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  worker:
+    name: worker GPU
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - run: pip install modal
+
+      # Le conteneur n'est pas allume par ce deploiement : Modal le demarre au
+      # premier job et l'eteint apres. Aucune instance GPU n'attend a vide.
+      - name: publication du worker
+        run: modal deploy infra/modal/worker.py
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}

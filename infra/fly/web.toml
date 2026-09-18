@@ -1,0 +1,53 @@
+# Application web (BFF) sur Fly.io.
+#
+# Deux regions : Paris pour l'Europe, Ashburn pour l'Amerique du Nord. La base
+# reste unique — repliquer PostgreSQL pour ce volume couterait plus qu'il ne
+# rapporterait, et le BFF tolere la latence transatlantique sur ses ecritures,
+# qui sont rares.
+
+app = "stemlab-web"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "../Dockerfile.web"
+  build-target = "runtime"
+
+[build.args]
+  NODE_ENV = "production"
+
+# Les migrations tournent une fois par deploiement, avant la bascule du trafic.
+# Au demarrage de chaque instance, deux machines migreraient en concurrence.
+[deploy]
+  release_command = "pnpm --filter @stemlab/database migrate:deploy"
+  strategy = "bluegreen"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # Une instance toujours eveillee par region : le demarrage a froid ajouterait
+  # plusieurs secondes a la premiere visite, et l'application est legere.
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 150
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"
