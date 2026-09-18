@@ -1328,3 +1328,114 @@ bascule la traduction.
 - **Le modèle `large-v3`** : seul `small` a été exécuté. Le passage à `large-v3`
   ne change que la valeur de `WHISPER_MODEL`, mais ni le temps ni la qualité n'ont
   été mesurés.
+
+---
+
+# Intermède — Pad d'accords
+
+Demandé en cours de phase 10, et construit avant de la reprendre.
+
+## A.1 — Ce qu'on tient dans la main
+
+Un pad d'accompagnement se joue d'une main pendant qu'on fait autre chose de
+l'autre. Toute la conception découle de là : une tonalité, une grille, et plus
+rien à décider en cours de route.
+
+Les accords proposés sont ceux de la **tonalité choisie** — pas les douze
+fondamentales chromatiques. Chercher un accord au milieu d'un chant est
+exactement ce qu'il faut éviter, et une grille diatonique se lit sans y penser.
+
+Huit pads : les sept degrés, plus un huitième. En majeur, c'est le **bVII**,
+emprunté au mixolydien, omniprésent dans le répertoire de louange — où il
+remplace souvent le vii°, que personne ne joue. En mineur, c'est le **V majeur**,
+emprunté au mineur harmonique : le v naturel existe et reste proposé, mais c'est
+le V qui résout. Les deux sont là ; le choix appartient au musicien.
+
+## A.2 — Le bVII s'écrit Bb, même en do majeur
+
+L'armure de do majeur n'a aucun bémol. La fonction du bVII, elle, est une
+**septième abaissée** : elle occupe la lettre du septième degré, donc `Bb` et
+jamais `A#`. L'orthographe suit la fonction, pas l'armure.
+
+Le test l'a attrapé immédiatement, et c'est le genre de détail qu'un musicien
+voit du premier coup d'œil. La correction tient en un champ facultatif sur le
+degré, qui impose son orthographe quand la fonction l'emporte.
+
+## A.3 — Huit timbres, aucun échantillon
+
+Une nappe tenue se synthétise très bien. Chaque voix est une liste de partiels —
+une onde, un rapport de fréquence, un gain, un désaccord — et c'est le
+**désaccord** entre partiels, plus que la forme d'onde, qui donne son épaisseur
+au son.
+
+Le bénéfice n'est pas théorique : plusieurs dizaines de mégaoctets
+d'échantillons en moins à télécharger, et un pad qui fonctionne hors connexion
+sans avoir rien préparé.
+
+La réverbération suit le même principe. Sa réponse impulsionnelle est un bruit
+dont l'amplitude décroît exponentiellement — soit exactement la forme d'une queue
+de réverbération dans une salle. Un enregistrement réel sonnerait plus juste,
+pour quelques centaines de kilo-octets et un gain que personne n'entendrait sous
+une nappe tenue.
+
+## A.4 — Le fondu enchaîné est le sujet
+
+Le principe d'une nappe est la continuité : passer d'un accord au suivant ne doit
+jamais laisser de trou.
+
+Chaque accord vit donc dans **son propre groupe d'oscillateurs**. Jouer un accord
+démarre le suivant pendant que le précédent s'éteint — les deux se recouvrent,
+comme deux mains sur un clavier. Rien n'est réutilisé d'un accord à l'autre :
+reconfigurer des oscillateurs en cours de route produirait un glissando, pas un
+fondu.
+
+Deux détails qui s'entendent :
+
+- la montée de l'enveloppe est **exponentielle**, parce que l'oreille perçoit le
+  volume en décibels ; une rampe linéaire s'entend comme une arrivée brutale
+  suivie d'un plateau ;
+- le **filtre s'ouvre avec l'attaque**. Une nappe qui s'éclaircit en montant sonne
+  vivante ; à timbre fixe, elle sonne comme un échantillon tenu.
+
+## A.5 — Quatre couleurs, pas huit
+
+Les pads sont colorés par **fonction tonale** — repos, départ, tension, couleur —
+et non par degré. Quatre familles se lisent d'un coup d'œil ; huit teintes
+demandent un effort de décodage que personne ne fournira en jouant.
+
+Le pad actif « respire » : un battement de quatre secondes, l'amplitude d'un
+souffle. Un accord tenu ne bouge pas à l'écran alors qu'il continue de sonner ;
+ce mouvement le dit sans attirer l'œil. Il disparaît pour qui refuse les
+animations — la couleur suffit alors.
+
+## A.6 — Prouver que ça sonne
+
+Un pad muet passerait tous les tests d'interface : les boutons changeraient
+d'état, la grille suivrait la tonalité, et rien ne sortirait des enceintes.
+
+Les tests de bout en bout instrumentent donc `OscillatorNode.prototype.start` et
+comptent les démarrages réels. C'est la seule chose observable de l'extérieur qui
+distingue un pad qui sonne d'un pad qui fait semblant.
+
+## A.7 — Definition of Done
+
+| Critère                                 | Résultat                                           |
+| --------------------------------------- | -------------------------------------------------- |
+| Choix de la tonalité, clic sur l'accord | ✅ douze fondamentales, majeur et mineur           |
+| Grille diatonique de la tonalité        | ✅ sept degrés + un emprunt utile                  |
+| Plusieurs timbres                       | ✅ huit, synthétisés, décrits en une phrase chacun |
+| Accords tenus, fondu enchaîné           | ✅ recouvrement vérifié, aucun trou                |
+| Enrichissements                         | ✅ triade, sus2, sus4, add9, septièmes             |
+| Élégant sur mobile                      | ✅ vérifié à 390 px                                |
+| **Du son est réellement produit**       | ✅ oscillateurs comptés au démarrage               |
+| Accessibilité AA et clavier             | ✅ axe + parcours clavier, sur les deux formats    |
+| Fonctionne hors connexion               | ✅ rien à télécharger : tout est synthétisé        |
+
+**Tests** : 24 du moteur audio, 24 de théorie, 10 E2E sur deux formats.
+
+**Non vérifié**
+
+- **Le rendu à l'oreille** : l'environnement n'a pas de sortie audio. Les
+  fréquences, les enveloppes et le recouvrement sont vérifiés par la mesure ; le
+  goût des timbres, non. À écouter, et à ajuster — les voix sont des données,
+  changer un partiel ne demande pas de toucher au moteur.

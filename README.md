@@ -74,7 +74,7 @@ Trois principes structurent le découpage :
 │  ├─ database/            schéma Prisma, migrations, client généré
 │  ├─ music/               théorie musicale : transposition, grille, recherche
 │  ├─ ui/                  composants shadcn/ui et thème partagé
-│  ├─ audio-engine/        moteur Web Audio, sans dépendance à un framework
+│  ├─ audio-engine/        moteur Web Audio + pad d'accords, sans framework
 │  └─ offline/             stockage OPFS, budget, file d'envoi différée
 ├─ infra/
 │  ├─ docker-compose.yml   stack de développement complète
@@ -236,6 +236,41 @@ classiques — le tempo déplace alors aussi la hauteur, et l'interface le signa
 > Sur une URL présignée, le navigateur ne peut pas le produire et le dépôt échoue en
 > `BadDigest`. Le client S3 est donc configuré avec
 > `requestChecksumCalculation: 'WHEN_REQUIRED'`.
+
+---
+
+## Pad d'accords
+
+Une page autonome (`/pad`) pour accompagner un temps de chant ou une répétition :
+on choisit une tonalité, on touche un accord, il se tient jusqu'au suivant.
+
+```
+tonalite ──► grille diatonique ──► [ C ][ Dm ][ Em ][ F ]
+                                    [ G ][ Am ][Bdim][ Bb ]
+                                      │
+                                      └─► nappe tenue, fondu enchaine
+```
+
+**La grille est diatonique, pas chromatique.** Un pad se joue sans regarder :
+chercher un accord parmi douze est exactement ce qu'il faut éviter. Huit pads —
+les sept degrés, plus un emprunt utile : le `bVII` en majeur, le `V` majeur en
+mineur, tous deux omniprésents dans le répertoire de louange.
+
+**Huit timbres, aucun échantillon.** Chaque voix est un empilement de partiels
+synthétisés ; la réverbération est une réponse impulsionnelle générée. Rien à
+télécharger, et le pad fonctionne hors connexion.
+
+**Le fondu enchaîné est le sujet.** Chaque accord vit dans son propre groupe
+d'oscillateurs : le suivant monte pendant que le précédent descend. Réutiliser
+les oscillateurs produirait un glissando, pas un fondu.
+
+Les pads sont colorés par fonction tonale — repos, départ, tension, couleur —
+et non par degré : quatre familles se lisent d'un coup d'œil, huit teintes
+demandent un décodage que personne ne fera en jouant.
+
+> **Détail qui compte.** Le `bVII` s'écrit `Bb` en do majeur, jamais `A#`, bien
+> que l'armure de do n'ait aucun bémol : l'orthographe suit la fonction — une
+> septième abaissée — et non l'armure.
 
 ---
 

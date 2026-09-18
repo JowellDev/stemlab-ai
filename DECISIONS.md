@@ -1126,3 +1126,52 @@ transcription manquée reviendrait à jeter le travail utile.
 **Corollaire.** Un morceau instrumental rend `null`, pas une liste vide : un
 résultat vide serait indistinguable d'un échec. Et un retraitement sans paroles
 efface celles de la version précédente, plutôt que de les laisser derrière.
+
+---
+
+## 2026-09-18 — Le pad synthétise ses timbres plutôt que de charger des échantillons
+
+**Décision.** Les huit voix du pad sont des empilements de partiels synthétisés,
+et la réverbération une réponse impulsionnelle générée.
+
+**Pourquoi.** Une nappe tenue est précisément ce que la synthèse additive rend le
+mieux. Des échantillons apporteraient un réalisme que personne ne perçoit sous
+une nappe, en échange de plusieurs dizaines de mégaoctets à télécharger — et d'un
+pad inutilisable hors connexion tant qu'ils ne le sont pas.
+
+**Conséquence utile.** Les voix sont des **données**. En ajouter une, ou corriger
+un timbre à l'oreille, ne demande pas de toucher au moteur.
+
+---
+
+## 2026-09-18 — Un accord par groupe d'oscillateurs
+
+**Décision.** Chaque accord joué crée son propre groupe d'oscillateurs, détruit
+une fois sa descente terminée. Rien n'est réutilisé d'un accord au suivant.
+
+**Pourquoi.** La continuité est tout l'objet d'une nappe : le nouvel accord doit
+monter pendant que l'ancien descend. Réutiliser les oscillateurs en changeant
+leur fréquence produirait un glissando — un effet, pas un fondu.
+
+**Coût accepté.** Quelques dizaines d'oscillateurs vivent simultanément pendant le
+recouvrement. C'est sans effet mesurable : ce sont des oscillateurs, pas des
+décodeurs.
+
+---
+
+## 2026-09-18 — La grille du pad est diatonique, pas chromatique
+
+**Décision.** Le pad propose les accords de la tonalité choisie — sept degrés plus
+un emprunt — et non les douze fondamentales.
+
+**Pourquoi.** Un pad se joue sans regarder, pendant qu'on fait autre chose.
+Chercher un accord dans une grille de douze est exactement ce qu'il faut éviter ;
+une grille diatonique se lit sans y penser.
+
+**L'emprunt retenu.** En majeur, le `bVII` — omniprésent dans le répertoire de
+louange, là où le `vii°` n'est jamais joué. En mineur, le `V` majeur, aux côtés du
+`v` naturel : c'est lui qui résout, mais les deux restent offerts.
+
+**Limite assumée.** Les accords hors tonalité — emprunts plus rares, dominantes
+secondaires — ne sont pas accessibles. Changer de tonalité reste possible d'un
+clic ; au-delà, ce serait un autre instrument.
