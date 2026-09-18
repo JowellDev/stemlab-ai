@@ -11,7 +11,7 @@
 | 6     | Pitch et tempo             | ⏳ à venir  | —          | —                                                                            |
 | 7     | PWA et hors-ligne          | ✅ terminée | 2026-09-18 | Installation Chrome Android / Safari iOS non constatée (aucun appareil ici)  |
 | 8     | Durcissement               | ✅ terminée | 2026-09-18 | `pg_dump` non exécutable ici ; DSN Sentry manquant (voir DECISIONS.md)       |
-| 9     | Paroles et traduction      | ⏳ à venir  | —          | Insérée à la demande, avant la mise en production                            |
+| 9     | Paroles et traduction      | ✅ terminée | 2026-09-18 | Qualité sur du chant non constatée (aucun extrait chanté libre ici)          |
 | 10    | Production                 | ⏳ à venir  | —          | Anciennement phase 9                                                         |
 
 ---
@@ -291,3 +291,34 @@ demande, avant la mise en production qui devient la phase 10.
 - **Un échec intermittent du test hors-ligne** sous charge machine : le navigateur
   refuse l'écriture pour place insuffisante alors qu'il annonce 2 Gio de quota. Le
   test porte désormais les chiffres du stockage dans son message d'échec.
+
+---
+
+## Phase 9 — Paroles et traduction (2026-09-18)
+
+**Definition of Done — vérifiée par exécution**
+
+| Critère                                    | Vérification                                         |
+| ------------------------------------------ | ---------------------------------------------------- |
+| Transcription sur la voix isolée           | ✅ après séparation, WAV temporaire en 16 kHz        |
+| Horodatage au mot                          | ✅ ordre croissant vérifié                           |
+| Détection de langue                        | ✅ `en` à 0,945 sur l'extrait de référence           |
+| Traduction français ↔ anglais              | ✅ les deux sens, une traduction par ligne           |
+| Défilement synchronisé, clic pour naviguer | ✅ même mécanisme que la grille d'accords            |
+| Licences commerciales                      | ✅ Whisper MIT, OPUS-MT permissif — NLLB-200 écarté  |
+| Un instrumental ne produit rien            | ✅ vérifié sur une sinusoïde                         |
+| Disponible hors-ligne                      | ✅ voyage dans la page en cache, traduction comprise |
+| Accessibilité AA du panneau                | ✅ axe sur une page de morceau avec paroles          |
+
+**Tests** : 85 E2E sur trois formats, 222 Python, 115 du moteur audio.
+
+**Mesure** : extrait de 11 s, processeur, modèle `small` — pipeline complet en
+22,8 s, transcription et traduction comprises. Traduction à chaud : 0,15 s.
+
+**Non vérifié**
+
+- **La qualité sur du chant** : l'extrait de référence est de la parole. Le chant
+  se transcrit moins bien, et aucun extrait chanté libre de droits n'était
+  disponible ici. À constater sur un vrai morceau.
+- **Le modèle `large-v3`** : seul `small` a été exécuté ici. Le passage se fait par
+  `WHISPER_MODEL`, mais ni le temps ni la qualité n'ont été mesurés.

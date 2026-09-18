@@ -2,8 +2,9 @@
 
 Séparation de pistes audio par IA et analyse musicale. Vous déposez un morceau,
 STEMLAB en extrait les pistes (voix, batterie, basse, guitare, piano, autres),
-détecte la tonalité, le tempo, la grille de mesures et la suite d'accords, puis vous
-rend la main dans un lecteur multipiste synchronisé — utilisable hors-ligne.
+détecte la tonalité, le tempo, la grille de mesures et la suite d'accords,
+transcrit les paroles et les traduit, puis vous rend la main dans un lecteur
+multipiste synchronisé — utilisable hors-ligne.
 
 > Usage strictement personnel. Les fichiers restent privés à leur propriétaire :
 > il n'existe ni partage public, ni catalogue, ni bibliothèque commune.
@@ -235,6 +236,47 @@ classiques — le tempo déplace alors aussi la hauteur, et l'interface le signa
 > Sur une URL présignée, le navigateur ne peut pas le produire et le dépôt échoue en
 > `BadDigest`. Le client S3 est donc configuré avec
 > `requestChecksumCalculation: 'WHEN_REQUIRED'`.
+
+---
+
+## Paroles et traduction
+
+La transcription porte sur le stem `vocals` **déjà isolé**, pas sur le mixage :
+c'est le seul avantage structurel de cette application sur un transcripteur
+générique, et il ne coûte rien puisque la séparation a lieu de toute façon.
+
+```
+mixage ──► séparation ──► vocals.wav ──► Whisper ──► lignes horodatées au mot
+                                                          │
+                                                          └─► OPUS-MT ──► traduction
+```
+
+| Étape         | Modèle                               | Licence    |
+| ------------- | ------------------------------------ | ---------- |
+| Transcription | `faster-whisper` (CTranslate2)       | MIT        |
+| Traduction    | `Helsinki-NLP/opus-mt-{en-fr,fr-en}` | permissive |
+
+`faster-whisper` plutôt que le paquet officiel : même modèle, plusieurs fois plus
+rapide sur processeur. **NLLB-200 est écarté** — ses poids sont non commerciaux,
+la même contrainte qui avait fait écarter madmom.
+
+**La traduction est faite ligne à ligne.** L'alignement avec les horodatages tient
+entièrement à la correspondance de position entre lignes et traductions ; traduire
+le texte entier puis le redécouper ne le garantirait pas.
+
+**Rien de tout cela ne peut faire échouer une séparation.** Une transcription qui
+échoue est journalisée et avalée : les pistes sont l'essentiel du service, et elles
+sont déjà produites. Un morceau instrumental rend `null` plutôt qu'un texte
+inventé — un résultat vide serait indistinguable d'un échec.
+
+**Hors-ligne**, les paroles voyagent dans la page mise en cache : aucun appel
+séparé, aucun octet supplémentaire dans le budget de stockage.
+
+| Variable              | Défaut  | Effet                                     |
+| --------------------- | ------- | ----------------------------------------- |
+| `TRANSCRIBE_LYRICS`   | `true`  | désactive l'étape entière                 |
+| `WHISPER_MODEL`       | `small` | `large-v3` en production                  |
+| `LYRICS_TRANSLATE_TO` | `fr,en` | langues cibles, séparées par des virgules |
 
 ---
 

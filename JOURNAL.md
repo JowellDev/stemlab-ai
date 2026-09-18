@@ -1230,3 +1230,101 @@ l'accessibilité.
   navigateur refuse l'écriture pour place insuffisante alors que le quota annoncé
   est de 2 Gio. Le test porte désormais les chiffres du stockage dans son message
   d'échec, faute d'avoir pu reproduire la panne à la demande.
+
+---
+
+# Phase 9 — Paroles et traduction
+
+## 9.1 — Pourquoi transcrire la voix isolée change tout
+
+La transcription porte sur le stem `vocals`, pas sur le mixage. C'est le seul
+avantage que cette application ait sur un transcripteur générique : une voix
+débarrassée de la batterie, de la basse et des guitares se transcrit nettement
+mieux, parce que le modèle n'a plus à démêler ce qui est parole de ce qui ne
+l'est pas.
+
+Cet ordre impose une contrainte sur le pipeline : la transcription vient **après**
+la séparation et **avant** l'encodage. Le fichier confié à Whisper est un WAV
+temporaire, pas l'Opus final — passer par un format avec perte n'apporterait rien
+à un modèle qui rééchantillonne de toute façon en 16 kHz.
+
+## 9.2 — `faster-whisper`, et pourquoi pas le paquet officiel
+
+Même modèle, exécuté par CTranslate2 : plusieurs fois plus rapide sur processeur.
+Cela compte ici, où aucun GPU n'est garanti, et cela comptera encore en
+production, où le worker GPU s'éteint à vide.
+
+Le modèle est configurable (`WHISPER_MODEL`) : `small` suffit aux tests et à un
+poste sans GPU, `large-v3` sert en production. Le compromis n'a pas à être figé
+dans le code.
+
+## 9.3 — La traduction, ligne à ligne
+
+OPUS-MT (Helsinki-NLP), un modèle par direction. Petits, rapides, sous licence
+permissive — là où **NLLB-200 est non commercial**, ce qui tombe exactement sous
+la contrainte déjà posée sur madmom.
+
+La traduction se fait ligne à ligne, pas par bloc. L'alignement avec les
+horodatages tient entièrement à la correspondance de position entre la liste des
+lignes et celle des traductions ; une traduction globale redécoupée après coup ne
+la garantirait pas. Le prix est un contexte plus court, donc quelques tournures
+moins heureuses — c'est le bon échange quand l'affichage doit défiler.
+
+Mesuré : à froid, 76 s (chargement du modèle compris) ; à chaud, **0,15 s**.
+
+## 9.4 — Ce qui peut échouer, et ce que ça emporte
+
+Trois garde-fous, tous pour la même raison : les pistes séparées sont l'essentiel
+du service, et elles sont déjà là quand la transcription commence.
+
+- Une transcription qui échoue est journalisée et **n'emporte pas** le reste.
+- Un morceau instrumental ne rend **rien** plutôt qu'un texte inventé. Le
+  détecteur d'activité vocale de Whisper écarte les longs passages instrumentaux,
+  où le modèle a tendance à halluciner des paroles.
+- Un retraitement qui ne rend plus de paroles **efface** celles de la version
+  précédente, au lieu de les laisser derrière.
+
+## 9.5 — Le tuple que TypeScript refusait
+
+Écrire les paroles dans la même transaction que le reste a buté sur un détail :
+la liste d'opérations de Prisma est typée comme un **tuple**, et un branchement
+conditionnel — écrire ou effacer selon ce que le pipeline a rendu — en changeait
+la forme. Rassembler les opérations dans un tableau nommé avant de le passer à
+`$transaction` suffit.
+
+## 9.6 — Hors-ligne, sans rien de plus à télécharger
+
+Les paroles voyagent dans la page rendue par le serveur, que le service worker
+met déjà en cache. Aucun appel séparé, aucun octet supplémentaire à prévoir dans
+le budget de stockage : elles sont lisibles — et traduisibles — en mode avion.
+
+Vérifié plutôt qu'affirmé : le test hors-ligne coupe le réseau, recharge, et
+bascule la traduction.
+
+## 9.7 — Definition of Done
+
+| Critère                                      | Résultat                                             |
+| -------------------------------------------- | ---------------------------------------------------- |
+| Transcription sur la voix isolée             | ✅ après séparation, WAV temporaire, 16 kHz          |
+| Horodatage au mot                            | ✅ ordre croissant vérifié                           |
+| Détection de langue                          | ✅ `en` à 0,945 sur l'extrait de référence           |
+| Traduction français ↔ anglais                | ✅ les deux sens, une traduction par ligne           |
+| Défilement synchronisé et clic pour naviguer | ✅ même mécanisme que la grille d'accords            |
+| Licences commerciales                        | ✅ Whisper MIT, OPUS-MT permissif — NLLB-200 écarté  |
+| Un instrumental ne produit rien              | ✅ vérifié sur une sinusoïde                         |
+| Disponible hors-ligne                        | ✅ voyage dans la page en cache, traduction comprise |
+| Accessibilité AA du panneau                  | ✅ axe sur la page d'un morceau avec paroles         |
+
+**Tests** : 11 Python, 5 de contrats, 5 E2E. Total du dépôt : 85 E2E, 222 Python.
+
+**Mesures** (extrait de 11 s, processeur, modèle `small`) : pipeline complet
+22,8 s, soit 2,1 × le temps réel, transcription et traduction comprises.
+
+**Non vérifié**
+
+- **La qualité sur du chant** : l'extrait de référence est de la parole. Le chant
+  — tenues, vibrato, mélismes — se transcrit moins bien, et aucun extrait chanté
+  libre de droits n'est disponible ici. À constater sur un vrai morceau.
+- **Le modèle `large-v3`** : seul `small` a été exécuté. Le passage à `large-v3`
+  ne change que la valeur de `WHISPER_MODEL`, mais ni le temps ni la qualité n'ont
+  été mesurés.

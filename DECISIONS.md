@@ -1065,3 +1065,64 @@ appelé **avant** l'analyse du paramètre.
 **Pourquoi.** L'ordre inverse laisse un attaquant marteler la route avec des
 identifiants malformés sans jamais toucher le compteur : le refus arrive plus
 tôt, mais il ne coûte rien à celui qui le provoque.
+
+---
+
+## 2026-09-18 — La transcription porte sur la voix isolée
+
+**Décision.** Whisper reçoit le stem `vocals`, pas le mixage. La transcription
+s'insère donc entre la séparation et l'encodage.
+
+**Pourquoi.** C'est le seul avantage structurel de cette application sur un
+transcripteur générique : le modèle n'a plus à démêler ce qui est parole de ce qui
+ne l'est pas. Le coût est nul — la séparation a lieu de toute façon.
+
+**Détail.** Le fichier confié au modèle est un WAV temporaire, pas l'Opus final :
+Whisper rééchantillonne en 16 kHz, et passer par un format avec perte
+n'apporterait rien.
+
+---
+
+## 2026-09-18 — NLLB-200 est écarté, OPUS-MT retenu
+
+**Problème de licence.** `facebook/nllb-200-*` est publié sous CC-BY-NC : usage
+non commercial. C'est exactement la contrainte qui avait fait écarter madmom.
+
+**Décision.** Les modèles OPUS-MT de Helsinki-NLP, un par direction
+(`opus-mt-en-fr`, `opus-mt-fr-en`). Petits, rapides, licences permissives.
+
+**Limite assumée.** Un modèle par paire de langues : étendre au-delà du français
+et de l'anglais demandera d'en ajouter d'autres, ou de reconsidérer un modèle
+multilingue à licence acceptable — M2M-100 (MIT) est le candidat naturel.
+
+---
+
+## 2026-09-18 — La traduction est faite ligne à ligne
+
+**Décision.** Chaque ligne transcrite est traduite séparément, et la traduction
+est stockée comme une liste parallèle à celle des lignes.
+
+**Pourquoi.** L'alignement avec les horodatages tient **entièrement** à la
+correspondance de position. Traduire le texte entier puis le redécouper ne le
+garantirait pas : rien n'oblige une traduction à conserver le nombre de phrases.
+
+**Coût accepté.** Le modèle voit moins de contexte, donc quelques tournures moins
+heureuses. C'est le bon échange quand l'affichage doit défiler en mesure.
+
+**Garde-fou.** Une traduction dont la longueur ne correspond pas au nombre de
+lignes n'est pas proposée à l'affichage.
+
+---
+
+## 2026-09-18 — Une transcription qui échoue n'emporte pas la séparation
+
+**Décision.** Les erreurs de transcription et de traduction sont journalisées et
+avalées ; le pipeline rend ses pistes et son analyse.
+
+**Pourquoi.** Les pistes séparées sont l'essentiel du service, et elles sont déjà
+produites quand la transcription commence. Faire échouer le job entier pour une
+transcription manquée reviendrait à jeter le travail utile.
+
+**Corollaire.** Un morceau instrumental rend `null`, pas une liste vide : un
+résultat vide serait indistinguable d'un échec. Et un retraitement sans paroles
+efface celles de la version précédente, plutôt que de les laisser derrière.
