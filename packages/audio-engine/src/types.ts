@@ -42,6 +42,9 @@ export type PlayerEvent =
   | { readonly type: 'loadprogress'; readonly progress: LoadProgress }
   | { readonly type: 'ended' }
   | { readonly type: 'error'; readonly error: Error }
+  /** Le moteur d'etirement n'a pas pu etre charge : la lecture continue sans
+   *  transposition independante. */
+  | { readonly type: 'fallback'; readonly reason: Error }
 
 export type PlayerEventType = PlayerEvent['type']
 

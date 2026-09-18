@@ -220,6 +220,16 @@ affichés sont en français.
 présignée, dépose le fichier directement sur le stockage objet, puis confirme. Le
 serveur ne fait que signer et orchestrer.
 
+**Tempo et hauteur sont indépendants.** Toutes les pistes sont chargées dans un
+**unique** nœud d'étirement temporel (Signalsmith Stretch, WASM dans un
+AudioWorklet), sous forme de paires de canaux. Une seule analyse pilote l'ensemble :
+la dérive entre pistes n'est pas seulement improbable, elle est structurellement
+impossible. Mesuré : 0 échantillon d'écart après cinq minutes à 75 % de tempo et
+−3 demi-tons.
+
+Quand l'AudioWorklet ne peut pas être chargé, la lecture bascule sur des sources
+classiques — le tempo déplace alors aussi la hauteur, et l'interface le signale.
+
 > **Piège connu.** Le SDK AWS v3 joint par défaut un checksum CRC32 à chaque envoi.
 > Sur une URL présignée, le navigateur ne peut pas le produire et le dépôt échoue en
 > `BadDigest`. Le client S3 est donc configuré avec
@@ -257,6 +267,11 @@ borne supérieure plus élevée.
 **Le worker refuse de démarrer : `'staticmethod' object has no attribute 'host'`.**
 `WorkerSettings.redis_settings` doit être une _instance_ de `RedisSettings`, pas une
 méthode. Elle est construite au chargement du module.
+
+**Le nœud d'étirement ne produit aucun son.**
+Chrome n'exécute pas le `process()` d'un `AudioWorkletNode` déclaré **sans entrée**,
+même lorsque ce nœud est une source. Une entrée est donc déclarée et laissée non
+connectée.
 
 **Le worker plante sur `ModuleNotFoundError: torch`.**
 `uv run` resynchronise l'environnement à chaque appel. Les dépendances lourdes sont

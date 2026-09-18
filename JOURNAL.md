@@ -780,3 +780,142 @@ bornes**. Chaque accord porte son intervalle ; le test n'a donc rien à supposer
 | Mobile 390 px                        | ✅ suite complète verte sur ce format            |
 
 **48 tests E2E verts** au total, desktop et mobile.
+
+---
+
+# Phase 6 — Pitch et tempo
+
+**2026-09-18** · branche `phase/06-pitch-tempo`
+
+## 6.1 — La spécification demandait une chose qui n'existe pas
+
+« SoundTouch compilé en WASM dans un AudioWorklet (licence LGPL — lien dynamique) ».
+
+Trois constats, dans l'ordre où ils sont apparus :
+
+1. **Aucun portage WASM de SoundTouch n'est publié.** `soundtouchjs` et
+   `soundtouch-ts` sont des réécritures en JavaScript. Obtenir du WASM demanderait de
+   compiler le C++ avec Emscripten — absent de la machine — et d'entretenir cette
+   chaîne.
+2. **Le « lien dynamique » ne tient pas.** Un module WASM empaqueté dans un _bundle_
+   navigateur est un lien statique déguisé. L'exigence de la LGPL serait au mieux
+   discutable — et c'est exactement le souci de licence qui avait fait écarter Rubber
+   Band.
+3. **Un portage JavaScript ne tiendrait pas la DoD.** Étirer six flux stéréo par
+   tranches de 128 échantillons, sans accroc, demande du code natif.
+
+**Signalsmith Stretch** (MIT, WASM, AudioWorklet fourni, lecture depuis tampon
+fournie) satisfait _les deux_ intentions de la spécification — du WASM, pas de
+licence contaminante — mieux que ce qu'elle nommait.
+
+## 6.2 — Le bénéfice qu'on n'avait pas vu venir
+
+Le nœud accepte _n_ canaux et les étire **ensemble**, sous une analyse unique.
+
+Toutes les pistes deviennent donc les canaux d'un seul nœud. La dérive entre pistes
+cesse d'être une propriété à surveiller : elle est **structurellement impossible**,
+les canaux n'étant même pas suivis séparément.
+
+Avec SoundTouch — limité à deux canaux — il aurait fallu _n_ instances, et prouver
+qu'elles restent verrouillées. Ici il n'y a rien à prouver : il n'y a qu'une horloge.
+
+## 6.3 — Trois heures perdues sur un paramètre
+
+Le nœud s'instanciait. Il acceptait ses tampons. Il acceptait sa planification. Et il
+ne produisait rien — `inputTime` figé à zéro.
+
+Diagnostic en isolant les variables une à une :
+
+| entrées | canaux | résultat   |
+| ------- | ------ | ---------- |
+| 1       | 2      | ✅         |
+| 0       | 2      | ❌ silence |
+| 1       | 8      | ✅         |
+| 0       | 8      | ❌ silence |
+
+Chrome n'exécute pas le `process()` d'un `AudioWorkletNode` déclaré **sans entrée**,
+même lorsque ce nœud est une source. Une entrée déclarée et laissée non connectée
+suffit.
+
+C'est le genre de panne où le premier réflexe — « le problème vient du nombre de
+canaux » — est faux, et où seule la variation systématique donne la réponse.
+
+## 6.4 — Un moteur, deux implémentations
+
+Le lecteur ne produit plus le son : il délègue à un `PlaybackEngine`.
+
+|                  | `StretchEngine`        | `BufferSourceEngine`      |
+| ---------------- | ---------------------- | ------------------------- |
+| Mécanisme        | nœud WASM, tous canaux | une source par piste      |
+| Tempo et hauteur | **indépendants**       | liés, comme une bande     |
+| Sync             | structurelle           | instant de départ partagé |
+| Rôle             | chemin principal       | repli                     |
+
+Le repli existe parce qu'un AudioWorklet peut échouer à se charger — navigateur
+ancien, politique de sécurité bloquant le `Blob:` du module, WASM refusé. Mieux vaut
+une lecture dégradée qu'aucune lecture ; et l'interface le **dit**, plutôt que de
+laisser un curseur sans effet.
+
+Le lecteur, lui, garde l'horloge, le transport, le mixage et les événements. C'est
+cette séparation qui a permis de remplacer toute la mécanique d'étirement sans
+toucher à la logique de lecture.
+
+**Un détail qui aurait tout décalé.** Le nœud compense sa propre latence et exige une
+avance d'environ 250 ms, là où le lecteur en prévoyait 80. Démarrer plus tard que
+l'horloge ne le croit aurait produit un décalage permanent entre la position affichée
+et ce qu'on entend. Le moteur déclare donc son besoin (`startLead`), et le lecteur
+retient le maximum des deux.
+
+## 6.5 — Mesurer la dérive
+
+Le banc (`/dev/drift`) rend l'audio dans un `OfflineAudioContext`, **à travers le
+vrai moteur de l'application**. Chaque piste reçoit des impulsions aux mêmes
+instants ; après étirement, leurs positions doivent coïncider à l'échantillon près.
+
+Cinq minutes d'audio se rendent en une trentaine de secondes, et le chemin vérifié
+est celui de la production — pas une reconstitution.
+
+| Réglage              | Entrée    | Sortie | Événements | Écart max         |
+| -------------------- | --------- | ------ | ---------- | ----------------- |
+| 75 %, −3 demi-tons   | 30 s      | 44 s   | 9          | **0 échantillon** |
+| 75 %, −3 demi-tons   | **300 s** | 404 s  | 99         | **0 échantillon** |
+| 50 %, +12 demi-tons  | 20 s      | 44 s   | —          | **0 échantillon** |
+| 150 %, −12 demi-tons | 20 s      | 17 s   | —          | **0 échantillon** |
+
+Une première version du banc, parallélisée, échouait par épuisement mémoire — cinq
+minutes sur huit canaux occupent plus de 500 Mo, et le rendu sortait **silencieux**
+plutôt que d'échouer franchement. Les mesures s'exécutent désormais en série.
+
+## 6.6 — Les tests de synchronisation changent d'objet
+
+`sync.spec.ts` instrumentait `AudioBufferSourceNode.start()` pour vérifier que les
+quatre pistes recevaient le même instant. Ce mécanisme n'existe plus sur le chemin
+principal.
+
+Le fichier vérifie désormais ce qui reste observable de l'extérieur :
+
+- **aucune** source de tampon n'est créée — preuve que le moteur d'étirement tourne ;
+- la position est exacte après chaque seek ;
+- l'écart entre horloge audio et position affichée reste constant.
+
+La garantie inter-pistes, elle, a changé de nature : mesurée par `drift.spec.ts`,
+garantie par construction. Les tests unitaires du moteur de repli continuent de
+vérifier l'instant partagé, qui reste sa propriété à lui.
+
+## 6.7 — Definition of Done
+
+| Critère                                              | Résultat                                              |
+| ---------------------------------------------------- | ----------------------------------------------------- |
+| Étirement WASM dans un AudioWorklet                  | ✅ Signalsmith Stretch (MIT) — voir l'écart documenté |
+| Hauteur ±12 demi-tons                                | ✅ testée aux bornes                                  |
+| Tempo 50–150 %                                       | ✅ testé aux bornes                                   |
+| Tempo et hauteur indépendants                        | ✅ `supportsIndependentPitch`                         |
+| Appliqué identiquement à toutes les pistes           | ✅ un seul nœud, une seule analyse                    |
+| **Aucune dérive après 5 min à 75 % et −3 demi-tons** | ✅ **0 échantillon**                                  |
+| Licence documentée                                   | ✅ MIT — la contrainte LGPL disparaît                 |
+
+**Tests** : 115 unitaires (`@stemlab/audio-engine`), 56 E2E sur deux formats.
+
+**Non vérifié** : l'absence d'accroc audio « sur un processeur de milieu de gamme »
+ne peut pas être constatée ici — l'environnement n'a pas de sortie audio. Le rendu
+hors-ligne prouve la justesse du traitement, pas la tenue en temps réel sous charge.

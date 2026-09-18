@@ -668,3 +668,144 @@ n'atteint aucune technologie d'assistance. Le composant partagé expose désorma
 (`p.tabular-nums span`), qui a changé au premier remaniement de style — et qui
 désignait deux éléments. Une valeur dynamique que plusieurs suites doivent lire mérite
 un point d'ancrage explicite.
+
+---
+
+## 2026-09-18 — Écart à la spécification : Signalsmith Stretch (MIT/WASM) au lieu de SoundTouch (LGPL)
+
+**Ce que demandait la spécification.** « Intégration de SoundTouch compilé en WASM
+dans un AudioWorklet (licence LGPL — lien dynamique, à documenter dans
+DECISIONS.md) ».
+
+**Le problème.** La spécification demande une chose qui n'existe pas sous cette
+forme, et pour une raison qui se retourne contre elle.
+
+1. **Il n'existe pas de portage WASM de SoundTouch publié.** Les paquets disponibles
+   sont `soundtouchjs` et `soundtouch-ts` — des réécritures en JavaScript, pas du
+   WASM. Obtenir du WASM exigerait de compiler la bibliothèque C++ avec Emscripten,
+   absent de l'environnement, et de maintenir cette chaîne de compilation.
+2. **Le « lien dynamique » n'a pas de sens ici.** La LGPL autorise l'usage dans un
+   produit propriétaire à condition que la bibliothèque reste remplaçable par
+   l'utilisateur. Un module WASM empaqueté dans un _bundle_ navigateur est un lien
+   statique déguisé : l'exigence de la LGPL serait au mieux discutable. La
+   spécification écartait déjà Rubber Band pour sa GPL — ce souci de licence est
+   précisément ce qui disqualifie aussi ce montage.
+3. **Un portage JavaScript ne tiendrait pas la Definition of Done.** Étirer six flux
+   stéréo en temps réel, par tranches de 128 échantillons, sans accroc sur un
+   processeur de milieu de gamme, demande du code natif.
+
+**Décision.** **Signalsmith Stretch** (`signalsmith-stretch`, 1.3.2) :
+
+| Critère               | SoundTouch (portage JS)            | Signalsmith Stretch                      |
+| --------------------- | ---------------------------------- | ---------------------------------------- |
+| Licence               | LGPL-2.1 — contrainte à documenter | **MIT** — aucune contrainte              |
+| Implémentation        | JavaScript                         | **WASM**, comme demandé                  |
+| AudioWorklet          | à écrire                           | **fourni**                               |
+| Lecture depuis tampon | à écrire                           | **fournie** — le nœud remplace la source |
+
+La bibliothèque satisfait **les deux** intentions de la spécification — du WASM, et
+pas de licence contaminante — mieux que ce qu'elle nommait. Rubber Band reste écarté,
+conformément à la contrainte d'origine.
+
+**Bénéfice architectural, imprévu et décisif.** Le nœud accepte _n_ canaux et les
+étire **ensemble**, sous une analyse unique. Toutes les pistes deviennent les canaux
+d'un seul nœud : la dérive entre pistes n'est plus une propriété à surveiller, elle
+est **structurellement impossible** — les canaux ne sont même pas suivis séparément.
+Avec une instance par piste, comme l'imposerait SoundTouch (limité à deux canaux), il
+aurait fallu prouver que _n_ instances restent verrouillées.
+
+---
+
+## 2026-09-18 — Un moteur de restitution, deux implémentations
+
+**Décision.** Le lecteur ne produit plus le son lui-même : il délègue à un
+`PlaybackEngine`. Deux implémentations :
+
+- **`StretchEngine`** — le nœud WASM. Tempo et hauteur indépendants.
+- **`BufferSourceEngine`** — des `AudioBufferSourceNode` classiques. La vitesse passe
+  par `playbackRate`, ce qui **déplace aussi la hauteur** : c'est le comportement
+  d'une bande magnétique.
+
+**Pourquoi un repli.** Un AudioWorklet peut échouer à se charger : navigateur trop
+ancien, politique de sécurité bloquant le `Blob:` du module, WASM refusé. Mieux vaut
+une lecture dégradée qu'aucune lecture. Le repli est **annoncé** par
+`supportsIndependentPitch`, et l'interface le dit à l'utilisateur plutôt que de
+laisser un réglage sans effet.
+
+**Ce que le lecteur garde.** L'horloge, le transport, le mixage, les événements. Le
+moteur ne s'occupe que du son. C'est cette séparation qui a permis de remplacer toute
+la mécanique d'étirement sans toucher à la logique de lecture.
+
+---
+
+## 2026-09-18 — L'avance de démarrage est négociée avec le moteur
+
+**Problème.** Le lecteur ancre son horloge sur l'instant de démarrage demandé. Le
+nœud d'étirement, lui, compense sa propre latence et exige une avance d'environ
+250 ms — bien plus que les 80 ms de lookahead du lecteur. Démarrer plus tard que
+l'horloge ne le croit aurait produit un décalage permanent entre la position affichée
+et ce qu'on entend.
+
+**Décision.** Le moteur déclare son besoin (`startLead`), et le lecteur retient
+`max(lookahead, startLead)`. L'horloge est ancrée sur cet instant : le son commence
+donc exactement là où elle l'attend.
+
+---
+
+## 2026-09-18 — `numberOfInputs: 0` empêche le processeur de tourner
+
+**Symptôme.** Le nœud s'instanciait, acceptait ses tampons, acceptait sa
+planification — et ne produisait rien. `inputTime` restait à zéro.
+
+**Cause.** Chrome n'exécute pas le `process()` d'un `AudioWorkletNode` déclaré sans
+entrée, même lorsque ce nœud est une source. Diagnostic obtenu en isolant les
+variables une à une : 2 canaux / 8 canaux, avec entrée / sans entrée.
+
+| entrées | canaux | résultat   |
+| ------- | ------ | ---------- |
+| 1       | 2      | ✅         |
+| 0       | 2      | ❌ silence |
+| 1       | 8      | ✅         |
+| 0       | 8      | ❌ silence |
+
+**Décision.** Une entrée est déclarée et laissée non connectée.
+
+---
+
+## 2026-09-18 — La dérive se mesure par rendu hors-ligne
+
+**Décision.** Le banc de mesure (`/dev/drift`, exercé par `e2e/drift.spec.ts`) rend
+l'audio dans un `OfflineAudioContext`, à travers le **vrai** moteur de l'application.
+
+**Pourquoi.** Cinq minutes d'audio se rendent en une trentaine de secondes, et le
+chemin vérifié est celui réellement emprunté en production — pas une reconstitution.
+Chaque piste reçoit des impulsions aux mêmes instants ; après étirement, leurs
+positions doivent coïncider à l'échantillon près.
+
+**Résultat.** 300 s d'entrée à 75 % et −3 demi-tons, 8 canaux : **0 échantillon
+d'écart** sur tous les événements mesurés. Idem aux bornes des réglages (50 % / +12,
+150 % / −12).
+
+**Limite du banc.** Le rendu de cinq minutes sur huit canaux occupe plus de 500 Mo :
+il ne tourne que sur un format d'affichage, et les mesures du fichier s'exécutent en
+série. Une première version, parallélisée, échouait par épuisement mémoire — le rendu
+sortait silencieux plutôt que d'échouer franchement.
+
+---
+
+## 2026-09-18 — Les tests de synchronisation changent d'objet
+
+**Constat.** `sync.spec.ts` instrumentait `AudioBufferSourceNode.start()` pour
+vérifier que les quatre pistes recevaient le même instant. Ce mécanisme n'existe plus
+sur le chemin principal : il n'y a plus de source par piste.
+
+**Décision.** Le fichier vérifie désormais ce qui reste observable de l'extérieur :
+
+- **aucune** source de tampon n'est créée — preuve que le moteur d'étirement est bien
+  celui qui tourne ;
+- la position est exacte après chaque seek ;
+- l'écart entre horloge audio et position affichée reste constant.
+
+La garantie inter-pistes, elle, a changé de nature : elle est mesurée par
+`drift.spec.ts` et garantie par construction. Les tests unitaires du moteur de repli
+continuent de vérifier l'instant partagé, qui reste sa propriété.

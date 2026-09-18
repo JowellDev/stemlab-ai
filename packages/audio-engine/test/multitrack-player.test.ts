@@ -1,5 +1,6 @@
 import type { StemType } from '@stemlab/contracts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { BufferSourceEngine } from '../src/engines/buffer-engine.js'
 import { MultitrackPlayer } from '../src/multitrack-player.js'
 import { DEFAULT_LOOKAHEAD_SECONDS } from '../src/scheduler.js'
 import type { LoadedStem } from '../src/types.js'
@@ -20,21 +21,30 @@ function makeStems(duration = TRACK_DURATION): LoadedStem[] {
   }))
 }
 
+/**
+ * Lecteur cable sur le moteur de repli.
+ *
+ * L'etirement temporel exige un AudioWorklet, absent de Node : l'injecter
+ * explicitement evite de dependre du chemin de repli et rend le test lisible.
+ */
 function makePlayer(context: FakeAudioContext): MultitrackPlayer {
-  return new MultitrackPlayer({ context: asAudioContext(context) })
+  return new MultitrackPlayer({
+    context: asAudioContext(context),
+    createEngine: async (audioContext, stems) => new BufferSourceEngine(audioContext, stems),
+  })
 }
 
 describe('MultitrackPlayer — chargement', () => {
   let context: FakeAudioContext
   let player: MultitrackPlayer
 
-  beforeEach(() => {
+  beforeEach(async () => {
     context = new FakeAudioContext()
     player = makePlayer(context)
   })
 
-  it('passe a `ready` et expose la duree de la piste la plus longue', () => {
-    player.loadBuffers([
+  it('passe a `ready` et expose la duree de la piste la plus longue', async () => {
+    await player.loadBuffers([
       { type: 'vocals', buffer: asAudioBuffer(new FakeAudioBuffer(120)) },
       { type: 'drums', buffer: asAudioBuffer(new FakeAudioBuffer(121.5)) },
     ])
@@ -42,17 +52,17 @@ describe('MultitrackPlayer — chargement', () => {
     expect(player.duration).toBe(121.5)
   })
 
-  it('initialise chaque piste a plein volume, non coupee, non solo', () => {
-    player.loadBuffers(makeStems())
+  it('initialise chaque piste a plein volume, non coupee, non solo', async () => {
+    await player.loadBuffers(makeStems())
     for (const type of STEM_TYPES) {
       expect(player.getStemState(type)).toEqual({ type, volume: 1, muted: false, soloed: false })
     }
   })
 
-  it('emet un changement d etat', () => {
+  it('emet un changement d etat', async () => {
     const states: string[] = []
     player.on('statechange', (event) => states.push(event.state))
-    player.loadBuffers(makeStems())
+    await player.loadBuffers(makeStems())
     expect(states).toContain('ready')
   })
 })
@@ -61,10 +71,10 @@ describe('MultitrackPlayer — demarrage synchrone', () => {
   let context: FakeAudioContext
   let player: MultitrackPlayer
 
-  beforeEach(() => {
+  beforeEach(async () => {
     context = new FakeAudioContext()
     player = makePlayer(context)
-    player.loadBuffers(makeStems())
+    await player.loadBuffers(makeStems())
   })
 
   it('planifie les quatre pistes sur un unique instant', async () => {
@@ -117,10 +127,10 @@ describe('MultitrackPlayer — seek', () => {
   let context: FakeAudioContext
   let player: MultitrackPlayer
 
-  beforeEach(() => {
+  beforeEach(async () => {
     context = new FakeAudioContext()
     player = makePlayer(context)
-    player.loadBuffers(makeStems())
+    await player.loadBuffers(makeStems())
   })
 
   it('replanifie toutes les pistes sur un unique instant, sans derive', async () => {
@@ -171,8 +181,8 @@ describe('MultitrackPlayer — seek', () => {
     expect(player.position).toBe(TRACK_DURATION)
   })
 
-  it('reste en pause si on cherche a l arret', () => {
-    player.loadBuffers(makeStems())
+  it('reste en pause si on cherche a l arret', async () => {
+    await player.loadBuffers(makeStems())
     player.seek(60)
     expect(player.position).toBe(60)
     expect(context.liveSources).toHaveLength(0)
@@ -183,10 +193,10 @@ describe('MultitrackPlayer — pause et reprise', () => {
   let context: FakeAudioContext
   let player: MultitrackPlayer
 
-  beforeEach(() => {
+  beforeEach(async () => {
     context = new FakeAudioContext()
     player = makePlayer(context)
-    player.loadBuffers(makeStems())
+    await player.loadBuffers(makeStems())
   })
 
   it('fige la position a la pause', async () => {
@@ -237,16 +247,25 @@ describe('MultitrackPlayer — mixage', () => {
   let context: FakeAudioContext
   let player: MultitrackPlayer
 
-  beforeEach(() => {
+  beforeEach(async () => {
     context = new FakeAudioContext()
     player = makePlayer(context)
-    player.loadBuffers(makeStems())
+    await player.loadBuffers(makeStems())
   })
 
-  /** Le gain d'une piste : le contexte cree d'abord le master, puis un gain par piste. */
+  /**
+   * Gain de mixage d'une piste.
+   *
+   * Le graphe compte deux gains par piste : celui du moteur et celui du mixage.
+   * Seul le second est branche sur le master — c'est ce lien qui l'identifie, et
+   * non son rang de creation, qui depend du moteur retenu.
+   */
   const gainOf = (type: StemType) => {
-    const index = STEM_TYPES.indexOf(type)
-    return context.createdGains[index + 1]
+    const master = context.createdGains[0]
+    const mixGains = context.createdGains.filter(
+      (gain) => gain !== master && master !== undefined && gain.connections.has(master),
+    )
+    return mixGains[STEM_TYPES.indexOf(type)]
   }
 
   it('applique le volume d une piste', () => {
@@ -319,14 +338,14 @@ describe('MultitrackPlayer — mixage', () => {
 })
 
 describe('MultitrackPlayer — fin de morceau', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers()
   })
 
   it('bascule en `ended` et se recale sur la duree', async () => {
     const context = new FakeAudioContext()
     const player = makePlayer(context)
-    player.loadBuffers(makeStems(4))
+    await player.loadBuffers(makeStems(4))
 
     const ended = vi.fn()
     player.on('ended', ended)
@@ -344,7 +363,7 @@ describe('MultitrackPlayer — fin de morceau', () => {
   it('replanifie la verification si la minuterie se reveille trop tot', async () => {
     const context = new FakeAudioContext()
     const player = makePlayer(context)
-    player.loadBuffers(makeStems(10))
+    await player.loadBuffers(makeStems(10))
 
     const ended = vi.fn()
     player.on('ended', ended)
@@ -365,7 +384,7 @@ describe('MultitrackPlayer — fin de morceau', () => {
   it('repart du debut si on relance depuis la fin', async () => {
     const context = new FakeAudioContext()
     const player = makePlayer(context)
-    player.loadBuffers(makeStems(4))
+    await player.loadBuffers(makeStems(4))
 
     await player.play()
     context.advance(DEFAULT_LOOKAHEAD_SECONDS + 4)
@@ -388,10 +407,10 @@ describe('MultitrackPlayer — cycle de vie', () => {
     expect(() => new MultitrackPlayer()).toThrow(/Web Audio/)
   })
 
-  it('refuse toute operation apres destruction', () => {
+  it('refuse toute operation apres destruction', async () => {
     const context = new FakeAudioContext()
     const player = makePlayer(context)
-    player.loadBuffers(makeStems())
+    await player.loadBuffers(makeStems())
     player.destroy()
 
     expect(() => player.setVolume('vocals', 0.5)).toThrow(/detruit/)
@@ -417,10 +436,10 @@ describe('MultitrackPlayer — vitesse de lecture', () => {
   let context: FakeAudioContext
   let player: MultitrackPlayer
 
-  beforeEach(() => {
+  beforeEach(async () => {
     context = new FakeAudioContext()
     player = makePlayer(context)
-    player.loadBuffers(makeStems())
+    await player.loadBuffers(makeStems())
   })
 
   it('demarre au tempo original', () => {
@@ -497,5 +516,84 @@ describe('MultitrackPlayer — vitesse de lecture', () => {
 
     expect(player.playbackRate).toBe(1.25)
     expect(player.position).toBe(42)
+  })
+})
+
+describe('MultitrackPlayer — transposition', () => {
+  let context: FakeAudioContext
+  let player: MultitrackPlayer
+
+  beforeEach(async () => {
+    context = new FakeAudioContext()
+    player = makePlayer(context)
+    await player.loadBuffers(makeStems())
+  })
+
+  it('demarre sans transposition', () => {
+    expect(player.semitones).toBe(0)
+  })
+
+  it('borne la transposition a une octave', () => {
+    player.setSemitones(24)
+    expect(player.semitones).toBe(12)
+    player.setSemitones(-24)
+    expect(player.semitones).toBe(-12)
+  })
+
+  it('arrondit au demi-ton', () => {
+    player.setSemitones(2.4)
+    expect(player.semitones).toBe(2)
+  })
+
+  it('ignore une valeur non finie', () => {
+    player.setSemitones(-3)
+    player.setSemitones(Number.NaN)
+    expect(player.semitones).toBe(0)
+  })
+
+  it('ne touche pas a la position', async () => {
+    await player.play()
+    context.advance(DEFAULT_LOOKAHEAD_SECONDS + 12)
+
+    const before = player.position
+    player.setSemitones(-3)
+    // La hauteur et le temps sont independants : transposer ne deplace rien.
+    expect(player.position).toBeCloseTo(before, 9)
+  })
+
+  it('ne touche pas au tempo', async () => {
+    player.setPlaybackRate(0.75)
+    player.setSemitones(5)
+    expect(player.playbackRate).toBe(0.75)
+  })
+
+  it('conserve la transposition apres un seek', async () => {
+    await player.play()
+    player.setSemitones(-3)
+    player.seek(30)
+    expect(player.semitones).toBe(-3)
+  })
+
+  it('signale que le repli ne dissocie pas hauteur et tempo', () => {
+    // Le moteur injecte par les tests est celui du repli.
+    expect(player.supportsIndependentPitch).toBe(false)
+  })
+
+  it('previent quand l etirement n a pas pu etre charge', async () => {
+    const fallbackContext = new FakeAudioContext()
+    const reasons: Error[] = []
+
+    const instance = new MultitrackPlayer({
+      context: asAudioContext(fallbackContext),
+      createEngine: async (audioContext, stems, options) => {
+        options?.onFallback?.(new Error('AudioWorklet indisponible'))
+        return new BufferSourceEngine(audioContext, stems)
+      },
+    })
+    instance.on('fallback', (event) => reasons.push(event.reason))
+    await instance.loadBuffers(makeStems())
+
+    expect(reasons).toHaveLength(1)
+    expect(reasons[0]?.message).toMatch(/AudioWorklet/)
   })
 })

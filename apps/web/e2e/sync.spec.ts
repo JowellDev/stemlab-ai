@@ -1,24 +1,25 @@
 import { expect, test } from '@playwright/test'
+import { readPosition } from './helpers/position'
 
 /**
- * Preuve de synchronisation dans un vrai navigateur.
+ * Synchronisation, vue depuis le navigateur.
  *
- * `AudioBufferSourceNode.prototype.start` est instrumente avant tout script de la
- * page : chaque demarrage planifie par le lecteur est enregistre avec son instant
- * absolu et son offset. Les tests unitaires prouvent que le planificateur produit un
- * `when` unique ; ceux-ci prouvent que c'est bien ce qui arrive au moteur audio reel,
- * a travers le decodage Opus, React et l'AudioContext du navigateur.
+ * Depuis la phase 6, les pistes ne sont plus des `AudioBufferSourceNode` distincts
+ * mais les canaux d'un **unique** noeud d'etirement temporel : la derive entre
+ * pistes n'est plus une propriete a surveiller, elle est structurellement
+ * impossible. `drift.spec.ts` la mesure ; ce fichier verifie ce qui reste
+ * observable de l'exterieur — que le moteur attendu est bien celui qui tourne, et
+ * que la position ne derive pas de l'horloge audio.
  */
 
-interface StartRecord {
+interface SourceStart {
   when: number
   offset: number
-  at: number
 }
 
 declare global {
   interface Window {
-    __starts: StartRecord[]
+    __starts: SourceStart[]
     __audioCtx: AudioContext | null
   }
 }
@@ -38,13 +39,10 @@ test.beforeEach(async ({ page }) => {
       offset?: number,
       duration?: number,
     ) {
-      // Le buffer d'une frame sert au deverrouillage iOS : il ne fait pas partie du mix.
+      // Le tampon d'une frame sert au deverrouillage iOS : il ne fait pas partie
+      // du mix et ne doit pas etre compte.
       if ((this.buffer?.length ?? 0) > 1) {
-        window.__starts.push({
-          when: when ?? 0,
-          offset: offset ?? 0,
-          at: this.context.currentTime,
-        })
+        window.__starts.push({ when: when ?? 0, offset: offset ?? 0 })
       }
       return originalStart.call(this, when as number, offset as number, duration as number)
     }
@@ -59,67 +57,48 @@ test.beforeEach(async ({ page }) => {
   })
 
   await page.goto('/dev/player')
-  await expect(page.getByText('Pret', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: 'Lire' })).toBeEnabled({ timeout: 30_000 })
   await page.evaluate(() => {
     window.__starts = []
   })
 })
 
-test('les quatre pistes demarrent au meme instant, a l echantillon pres', async ({ page }) => {
+test('les pistes passent par le moteur d etirement, pas par des sources separees', async ({
+  page,
+}) => {
   await page.getByRole('button', { name: 'Lire' }).click()
   await expect(page.getByText('Lecture', { exact: true })).toBeVisible()
+  await expect.poll(() => readPosition(page)).toBeGreaterThan(0.5)
 
-  const starts = await page.evaluate(() => window.__starts)
-  expect(starts).toHaveLength(4)
-
-  const instants = [...new Set(starts.map((start) => start.when))]
-  expect(instants).toHaveLength(1)
-
-  const offsets = [...new Set(starts.map((start) => start.offset))]
-  expect(offsets).toEqual([0])
+  // Aucune source de tampon n'est creee : les quatre pistes sont les canaux d'un
+  // unique noeud. C'est ce qui rend la derive impossible par construction.
+  expect(await page.evaluate(() => window.__starts.length)).toBe(0)
 })
 
-test('un seek replanifie les quatre pistes sur un instant unique', async ({ page }) => {
-  await page.getByRole('button', { name: 'Lire' }).click()
-  await expect(page.getByText('Lecture', { exact: true })).toBeVisible()
-  await page.waitForTimeout(700)
+test('la position est exacte apres un seek', async ({ page }) => {
+  for (const target of [5, 10, 5, 0]) {
+    await page.locator('body').press('Home')
+    await expect.poll(() => readPosition(page)).toBe(0)
 
-  await page.evaluate(() => {
-    window.__starts = []
-  })
-  await page.locator('body').press('ArrowRight')
-  await page.waitForTimeout(200)
-
-  const starts = await page.evaluate(() => window.__starts)
-  expect(starts).toHaveLength(4)
-  expect([...new Set(starts.map((s) => s.when))]).toHaveLength(1)
-  // Un unique offset : aucune piste ne repart d'un point different des autres.
-  expect([...new Set(starts.map((s) => s.offset))]).toHaveLength(1)
+    for (let remaining = target; remaining > 0; remaining -= 5) {
+      await page.locator('body').press('ArrowRight')
+    }
+    // Aucune accumulation d'erreur : la position vaut exactement la cible.
+    await expect.poll(() => readPosition(page)).toBe(target)
+  }
 })
 
-test('une serie de seeks n accumule aucune derive', async ({ page }) => {
+test('une serie de seeks en lecture n accumule aucune erreur', async ({ page }) => {
   await page.getByRole('button', { name: 'Lire' }).click()
   await expect(page.getByText('Lecture', { exact: true })).toBeVisible()
 
   for (const _ of [1, 2, 3, 4, 5]) {
-    await page.waitForTimeout(150)
-    await page.evaluate(() => {
-      window.__starts = []
-    })
     await page.locator('body').press('ArrowRight')
     await page.locator('body').press('ArrowLeft')
-    await page.waitForTimeout(120)
-
-    const starts = await page.evaluate(() => window.__starts)
-    // Deux replanifications de quatre pistes, chacune sur un instant unique.
-    expect(starts).toHaveLength(8)
-    const first = starts.slice(0, 4)
-    const second = starts.slice(4)
-    expect([...new Set(first.map((s) => s.when))]).toHaveLength(1)
-    expect([...new Set(first.map((s) => s.offset))]).toHaveLength(1)
-    expect([...new Set(second.map((s) => s.when))]).toHaveLength(1)
-    expect([...new Set(second.map((s) => s.offset))]).toHaveLength(1)
   }
+
+  await page.locator('body').press('Home')
+  await expect.poll(() => readPosition(page)).toBe(0)
 })
 
 test('la position suit l horloge audio sans deriver', async ({ page }) => {
@@ -152,14 +131,13 @@ test('la position suit l horloge audio sans deriver', async ({ page }) => {
     return collected
   })
 
-  // La lecture a reellement avance.
   expect(samples.length).toBeGreaterThan(3)
   expect(samples.at(-1)?.displayed ?? 0).toBeGreaterThan(2)
 
   // L'ecart entre horloge audio et position affichee reste constant : c'est la
   // definition d'une absence de derive. La tolerance couvre l'arrondi au dixieme
-  // de seconde de l'affichage et le lookahead de planification.
+  // de seconde de l'affichage et l'avance de planification du moteur.
   const deltas = samples.map((sample) => sample.audio - sample.displayed)
   const spread = Math.max(...deltas) - Math.min(...deltas)
-  expect(spread).toBeLessThan(0.3)
+  expect(spread).toBeLessThan(0.4)
 })

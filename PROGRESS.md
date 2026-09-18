@@ -191,3 +191,36 @@ désalignement.
   qui dissocie tempo et hauteur — l'API exposée ne change pas.
 - **La transposition ne modifie pas encore l'audio**, seulement les libellés. Même
   échéance.
+
+---
+
+## Phase 6 — Pitch et tempo (2026-09-18)
+
+**Definition of Done — vérifiée par exécution**
+
+| Critère                                                               | Vérification                                                            |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Étirement WASM dans un AudioWorklet                                   | ✅ Signalsmith Stretch — **écart à la spécification documenté**         |
+| Hauteur ±12 demi-tons                                                 | ✅ mesuré aux bornes                                                    |
+| Tempo 50–150 %                                                        | ✅ mesuré aux bornes                                                    |
+| Tempo et hauteur indépendants                                         | ✅ le repli l'annonce quand il ne l'est pas                             |
+| Appliqué identiquement à toutes les pistes                            | ✅ un seul nœud porte tous les canaux                                   |
+| **Aucune dérive entre pistes après 5 minutes à 75 % et −3 demi-tons** | ✅ **0 échantillon d'écart**, 99 événements mesurés sur 404 s de sortie |
+| Licence documentée                                                    | ✅ MIT au lieu de LGPL — la contrainte disparaît                        |
+
+**Écart à la spécification, assumé et justifié**
+
+La spécification demandait SoundTouch en WASM. Aucun portage WASM n'est publié, et le
+« lien dynamique » qu'exigerait sa LGPL n'a pas de sens pour un module empaqueté dans
+un _bundle_ navigateur. Signalsmith Stretch est en WASM **et** sous licence MIT : il
+satisfait les deux intentions mieux que ce que la spécification nommait. Rubber Band
+reste écarté, comme demandé.
+
+**Tests** : 115 unitaires (`@stemlab/audio-engine`), 56 E2E sur deux formats.
+
+**Non vérifié**
+
+- **L'absence d'accroc audio sur un processeur de milieu de gamme** : l'environnement
+  n'a pas de sortie audio. Le rendu hors-ligne prouve la justesse du traitement, pas
+  la tenue en temps réel sous charge. À constater à l'oreille avant la mise en
+  production.
