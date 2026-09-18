@@ -5,13 +5,14 @@ import {
   MIN_SEMITONES,
   type StemSource,
 } from '@stemlab/audio-engine'
-import type { AnalysisResult } from '@stemlab/contracts'
+import type { AnalysisResult, Lyrics } from '@stemlab/contracts'
 import { pitchClassIndex } from '@stemlab/music'
 import { offlineUrl } from '@stemlab/offline'
 import { Alert, AlertDescription, Button, Slider } from '@stemlab/ui'
 import { Gauge, Info, Music2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChordPanel } from '~/components/chords/chord-panel'
+import { LyricsPanel } from '~/components/lyrics/lyrics-panel'
 import { PlayerControls, type PlayerStem } from '~/components/player/player-controls'
 import { ShortcutLegend } from '~/components/player/shortcut-legend'
 import { StatusBadge } from '~/components/player/status-badge'
@@ -26,6 +27,7 @@ interface TrackWorkspaceProps {
   subtitle?: string
   stems: readonly PlayerStem[]
   analysis: AnalysisResult | null
+  lyrics: Lyrics | null
   /** Format de chaque piste, pour le stockage hors-ligne. */
   formats: Readonly<Record<string, string>>
 }
@@ -42,6 +44,7 @@ export function TrackWorkspace({
   subtitle,
   stems,
   analysis,
+  lyrics,
   formats,
 }: TrackWorkspaceProps) {
   const loadStems = useCallback(
@@ -142,6 +145,8 @@ export function TrackWorkspace({
           rate={rate}
         />
       ) : null}
+
+      {lyrics && lyrics.lines.length > 0 ? <LyricsPanel player={player} lyrics={lyrics} /> : null}
 
       <PlayerControls
         player={player}

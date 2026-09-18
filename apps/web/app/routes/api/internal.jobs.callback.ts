@@ -1,6 +1,7 @@
 import {
   JobCallback,
   type JobCallbackSuccess,
+  type PipelineResult,
   SIGNATURE_HEADER,
   TIMESTAMP_HEADER,
   verifySignature,
@@ -117,7 +118,10 @@ async function applyFailure(jobId: string, trackId: string, message: string): Pr
 async function applySuccess(callback: JobCallbackSuccess): Promise<void> {
   const { result } = callback
 
-  await db.$transaction([
+  // Les operations sont rassemblees dans un tableau plutot que passees en
+  // litteral : le tuple que TypeScript inferait alors ne survivait pas au
+  // branchement conditionnel sur les paroles.
+  const operations = [
     db.stem.deleteMany({ where: { trackId: callback.trackId } }),
 
     db.stem.createMany({
@@ -156,6 +160,19 @@ async function applySuccess(callback: JobCallbackSuccess): Promise<void> {
       },
     }),
 
+    // Les paroles sont ecrites ou effacees selon ce que le pipeline a rendu :
+    // un retraitement d'un morceau devenu instrumental ne doit pas laisser les
+    // paroles de la version precedente.
+    ...(result.lyrics
+      ? [
+          db.lyrics.upsert({
+            where: { trackId: callback.trackId },
+            create: { trackId: callback.trackId, ...lyricsColumns(result.lyrics) },
+            update: lyricsColumns(result.lyrics),
+          }),
+        ]
+      : [db.lyrics.deleteMany({ where: { trackId: callback.trackId } })]),
+
     db.job.upsert({
       where: { id: callback.jobId },
       create: {
@@ -187,7 +204,9 @@ async function applySuccess(callback: JobCallbackSuccess): Promise<void> {
         waveform: result.waveform,
       },
     }),
-  ])
+  ]
+
+  await db.$transaction(operations)
 }
 
 
@@ -196,5 +215,15 @@ function parseJson(raw: string): unknown {
     return JSON.parse(raw)
   } catch {
     return null
+  }
+}
+
+
+function lyricsColumns(lyrics: NonNullable<PipelineResult['lyrics']>) {
+  return {
+    language: lyrics.language,
+    languageConfidence: lyrics.languageConfidence,
+    lines: lyrics.lines,
+    translations: lyrics.translations,
   }
 }

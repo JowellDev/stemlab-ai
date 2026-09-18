@@ -6,10 +6,12 @@ transfert S3 et la file de jobs sont ajoutes par-dessus en phase 3.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import cast
 
 import numpy as np
@@ -26,10 +28,12 @@ from ml.pipeline.io_audio import (
     read_audio,
     write_wav,
 )
+from ml.pipeline.lyrics import TranscriptionSettings, transcribe, translate
 from ml.pipeline.models import (
     AnalysisResult,
     Beat,
     Chord,
+    Lyrics,
     PipelineResult,
     StemArtifact,
     StemType,
@@ -37,6 +41,8 @@ from ml.pipeline.models import (
     Waveform,
 )
 from ml.pipeline.waveform import DEFAULT_POINTS_PER_SECOND, compute_peaks
+
+logger = logging.getLogger(__name__)
 
 #: Le mixage basse + autres porte l'harmonie : la voix y ajoute du vibrato et du
 #: portamento qui brouillent le chromagramme, la batterie n'a pas de hauteur.
@@ -53,6 +59,11 @@ class PipelineOptions:
     points_per_second: int = DEFAULT_POINTS_PER_SECOND
     #: Conserve aussi les stems en WAV. Utile en debogage, lourd en production.
     keep_wav: bool = False
+    #: Transcription des paroles. Desactivable : elle double le temps de traitement.
+    transcribe_lyrics: bool = True
+    whisper_model: str = "small"
+    #: Langues vers lesquelles traduire, en plus de la langue d'origine.
+    translate_to: tuple[str, ...] = ("fr", "en")
 
 
 def run_pipeline(
@@ -82,7 +93,10 @@ def run_pipeline(
     report(62, "analyse")
     result_analysis = analyze(separated.stems, audio, opts)
 
-    report(78, "encodage")
+    report(72, "paroles")
+    lyrics = transcribe_vocals(separated.stems, audio.sample_rate, opts)
+
+    report(84, "encodage")
     artifacts = encode_stems(separated.stems, audio.sample_rate, output_dir, opts)
 
     report(95, "formes d'onde")
@@ -102,6 +116,7 @@ def run_pipeline(
         stems=artifacts,
         analysis=result_analysis,
         waveform=mix_waveform,
+        lyrics=lyrics,
         processing_seconds=round(time.monotonic() - started, 2),
     )
 
@@ -171,6 +186,46 @@ def mix_harmonic_stems(stems: dict[str, npt.NDArray[np.float32]]) -> npt.NDArray
 
     peak = float(np.max(np.abs(total))) or 1.0
     return (total / peak).astype(np.float32)
+
+
+def transcribe_vocals(
+    stems: dict[str, npt.NDArray[np.float32]],
+    sample_rate: int,
+    opts: PipelineOptions,
+) -> Lyrics | None:
+    """Transcrit la voix isolee, puis la traduit.
+
+    Le fichier confie a Whisper est un WAV temporaire, pas l'Opus final : la
+    transcription tourne avant l'encodage, et un passage par un format avec perte
+    n'apporterait rien a un modele qui reechantillonne de toute facon en 16 kHz.
+    """
+    if not opts.transcribe_lyrics:
+        return None
+
+    vocals = stems.get("vocals")
+    if vocals is None:
+        return None
+
+    with TemporaryDirectory(prefix="stemlab-lyrics-") as tmp:
+        path = write_wav(Path(tmp) / "vocals.wav", vocals, sample_rate)
+        try:
+            lyrics = transcribe(path, TranscriptionSettings(model=opts.whisper_model))
+        except Exception:
+            # Une transcription qui echoue ne doit pas emporter la separation :
+            # les pistes, elles, sont deja la et c'est l'essentiel du service.
+            logger.exception("transcription des paroles impossible")
+            return None
+
+    if lyrics is None:
+        return None
+
+    for target in opts.translate_to:
+        try:
+            lyrics = translate(lyrics, target)
+        except Exception:
+            logger.exception("traduction impossible", extra={"target": target})
+
+    return lyrics
 
 
 def encode_stems(

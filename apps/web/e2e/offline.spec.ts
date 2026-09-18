@@ -1,7 +1,13 @@
 import { type Page, expect, test } from '@playwright/test'
 import { readPosition } from './helpers/position'
 import { waitForHydration } from './helpers/hydration'
-import { FIXTURE, PROCESSING_TIMEOUT_MS, openReadyTrack, signUp } from './helpers/track'
+import {
+  FIXTURE,
+  PROCESSING_TIMEOUT_MS,
+  SPEECH_FIXTURE,
+  openReadyTrack,
+  signUp,
+} from './helpers/track'
 
 /**
  * Definition of Done de la phase 7 : un morceau telecharge se lit integralement
@@ -106,6 +112,33 @@ test('un morceau telecharge se lit en mode avion', async ({ page, context }) => 
   // Le seek fonctionne aussi : les octets sont bien tous la, pas seulement le debut.
   await page.locator('body').press('ArrowRight')
   await expect.poll(() => readPosition(page)).toBeGreaterThan(4)
+
+  await context.setOffline(false)
+})
+
+test('les paroles restent lisibles en mode avion', async ({ page, context }) => {
+  test.setTimeout(PROCESSING_TIMEOUT_MS + 180_000)
+
+  await openReadyTrack(page, { fixture: SPEECH_FIXTURE, name: 'discours' })
+  await waitForController(page)
+
+  await expect(page.getByTestId('lyrics-lines')).toContainText('ask not what your country')
+
+  await page.getByRole('button', { name: /Rendre .* disponible hors connexion/ }).click()
+  await expect(page.getByRole('button', { name: /disponible hors connexion — retirer/ })).toBeVisible(
+    { timeout: 120_000 },
+  )
+
+  await context.setOffline(true)
+  await page.reload()
+
+  // Les paroles voyagent dans la page mise en cache, pas dans un appel separe :
+  // rien de plus n'est a telecharger, et la traduction reste disponible.
+  await expect(page.getByTestId('offline-indicator')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('lyrics-lines')).toContainText('ask not what your country')
+
+  await page.getByRole('region', { name: 'Paroles' }).getByRole('button', { name: 'Francais' }).click()
+  await expect(page.getByTestId('lyrics-lines')).toContainText('votre pays')
 
   await context.setOffline(false)
 })

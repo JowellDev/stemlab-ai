@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { Lyrics } from './lyrics.js'
 import { AnalysisResult, Waveform } from './music.js'
 import {
   AudioFormat,
@@ -78,6 +79,8 @@ export const PipelineResult = z.object({
   analysis: AnalysisResult,
   /** Peaks du mix complet, pour la barre de transport. */
   waveform: Waveform,
+  /** Absentes pour un morceau instrumental, ou quand la transcription est desactivee. */
+  lyrics: Lyrics.nullish(),
   /** Temps de traitement mesure cote worker, pour le suivi de cout. */
   processingSeconds: Seconds,
 })
