@@ -343,6 +343,42 @@ séparé, aucun octet supplémentaire dans le budget de stockage.
 
 ---
 
+## Stockage objet et CDN
+
+Le stockage est S3-compatible : MinIO ou SeaweedFS en développement, **Cloudflare
+R2** en production. Rien à changer dans le code — seule la configuration diffère.
+
+| Variable              | Développement            | R2                                                 |
+| --------------------- | ------------------------ | -------------------------------------------------- |
+| `S3_ENDPOINT`         | `http://localhost:59000` | `https://<compte>.r2.cloudflarestorage.com`        |
+| `S3_REGION`           | `us-east-1`              | **`auto`** — toute autre valeur casse la signature |
+| `S3_FORCE_PATH_STYLE` | `true`                   | **`false`**                                        |
+
+`pnpm preflight` vérifie ces deux dernières : l'erreur de signature qu'elles
+provoquent ne dit pas ce qui manque.
+
+**CORS.** L'audio ne transite jamais par l'application : le navigateur dépose et
+récupère directement. Ce sont donc des requêtes inter-origines, et sans politique
+CORS le navigateur les refuse **avant de les émettre** — l'envoi échoue sans
+laisser de trace côté serveur. MinIO et SeaweedFS sont permissifs par défaut, ce
+qui masque le problème ; R2 ne l'est pas.
+
+```bash
+pnpm s3:cors                      # applique la politique
+node scripts/ensure-cors.mjs --show
+```
+
+**Pas de CDN devant l'audio, et c'est délibéré.** Les adresses de lecture sont
+signées et expirent au bout d'une heure ; il n'existe aucun chemin qui rende une
+adresse publique permanente. Mettre un CDN devant ces fichiers demanderait de les
+signer au niveau du CDN — une signature S3 porte sur l'hôte, et le réécrire
+l'invalide. **Le seau ne doit jamais être rendu public.**
+
+Le CDN a sa place devant l'**application** : les fichiers statiques, eux, sont
+publics par nature et déjà précachés par le service worker.
+
+---
+
 ## Sécurité et exploitation
 
 **Quotas.** Le plan gratuit permet cinq morceaux par mois et quatre pistes ; le

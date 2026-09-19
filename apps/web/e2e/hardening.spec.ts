@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { signUp } from './helpers/track'
+import { openReadyTrack, signUp } from './helpers/track'
 
 /**
  * Durcissement : ce qui protege le service quand il est attaque, pas utilise.
@@ -86,4 +86,25 @@ test('la page legale est atteignable depuis l application', async ({ page }) => 
 
   await page.getByRole('contentinfo').getByRole('link', { name: "Conditions d'utilisation" }).click()
   await expect(page.getByRole('heading', { name: "Conditions d'utilisation" })).toBeVisible()
+})
+
+test('les adresses des pistes sont signees et expirent', async ({ page }) => {
+  await openReadyTrack(page)
+
+  // On interroge la route qui signe les pistes : c'est la meme fonction qui
+  // sert la page du morceau.
+  const trackId = page.url().split('/tracks/')[1]!
+  const response = await page.request.get(`/api/tracks/${trackId}/stems`)
+  expect(response.ok()).toBe(true)
+
+  const payload = (await response.json()) as { stems: { url: string }[] }
+  expect(payload.stems.length).toBeGreaterThan(0)
+
+  for (const stem of payload.stems) {
+    const url = new URL(stem.url)
+    // Une adresse non signee serait partageable indefiniment : c'est exactement
+    // ce que le service promet de ne pas permettre.
+    expect(url.searchParams.get('X-Amz-Signature'), stem.url).toBeTruthy()
+    expect(Number(url.searchParams.get('X-Amz-Expires'))).toBeGreaterThan(0)
+  }
 })

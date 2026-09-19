@@ -97,6 +97,31 @@ if (production) {
     fail('METRICS_TOKEN est absent : /metrics serait inaccessible en production')
   }
 
+  // --- particularites de Cloudflare R2 ------------------------------------
+  const endpoint = process.env.S3_ENDPOINT ?? ''
+  if (endpoint.includes('r2.cloudflarestorage.com')) {
+    // R2 n'a qu'une region logique. Toute autre valeur fait echouer la
+    // signature, et le message d'erreur ne dit pas pourquoi.
+    if ((process.env.S3_REGION ?? '') !== 'auto') {
+      fail(`S3_REGION doit valoir « auto » sur R2 (actuellement « ${process.env.S3_REGION} »)`)
+    } else {
+      pass('S3_REGION = auto, comme R2 l exige')
+    }
+
+    if ((process.env.S3_FORCE_PATH_STYLE ?? 'true') !== 'false') {
+      fail('S3_FORCE_PATH_STYLE doit valoir false sur R2')
+    }
+  }
+
+  // Le seau ne doit jamais etre public : les adresses de lecture sont signees et
+  // expirantes, et c'est ce que la page legale promet.
+  if (process.env.S3_PUBLIC_URL) {
+    fail(
+      'S3_PUBLIC_URL n est plus utilise : une adresse publique et permanente ' +
+        'contredit la promesse de confidentialite. Retirez la variable.',
+    )
+  }
+
   if (!process.env.SENTRY_DSN) {
     checks.push({ ok: true, warn: true, message: 'SENTRY_DSN absent : aucune remontee d erreur' })
   }

@@ -54,7 +54,6 @@ const EnvSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().min(1),
   S3_SECRET_ACCESS_KEY: z.string().min(1),
   S3_FORCE_PATH_STYLE: booleanish.default(true),
-  S3_PUBLIC_URL: z.string().default(''),
 
   BETTER_AUTH_SECRET: z.string().min(16, 'BETTER_AUTH_SECRET doit faire au moins 16 caracteres'),
   BETTER_AUTH_URL: z.url().default('http://localhost:3000'),
