@@ -1224,3 +1224,40 @@ deux.
 
 **Garde-fou.** La tonalité devinée reste modifiable : elle fait gagner vingt-quatre
 réglages, elle n'engage rien.
+
+---
+
+## 2026-09-19 — Aucun CDN devant l'audio, et le seau reste privé
+
+**Défaut corrigé.** `presignDownload` renvoyait une adresse publique et permanente
+dès que `S3_PUBLIC_URL` était renseignée. La variable était vide partout, mais la
+documentation de déploiement allait précisément pousser à la renseigner pour
+brancher un CDN — et la page légale promet des adresses signées et expirantes.
+
+**Décision.** Le chemin est supprimé, et la variable avec lui. Toute adresse de
+lecture est signée et expire au bout d'une heure.
+
+**Pourquoi pas un CDN signé.** Une signature S3 porte sur l'hôte : réécrire l'hôte
+pour pointer vers un CDN l'invalide. Il faudrait signer au niveau du CDN, avec son
+propre mécanisme. C'est faisable, ce n'est pas fait, et prétendre le contraire
+ferait courir un risque à des fichiers qui ne nous appartiennent pas.
+
+**Ce que le CDN garde.** Les fichiers statiques de l'application, publics par
+nature et déjà précachés par le service worker.
+
+---
+
+## 2026-09-19 — La politique CORS est posée explicitement
+
+**Constat.** Sans politique CORS, le navigateur refuse les dépôts inter-origines
+**avant de les émettre** : l'envoi échoue sans qu'aucune trace n'apparaisse côté
+serveur. MinIO et SeaweedFS sont permissifs par défaut, ce qui masque entièrement
+le problème en développement ; R2 ne l'est pas.
+
+**Décision.** `scripts/ensure-cors.mjs` pose une politique nominative — les
+origines de l'application, pas `*`. Une politique ouverte laisserait n'importe
+quel site utiliser une adresse présignée interceptée ; elles expirent, mais la
+fenêtre suffirait.
+
+**Vérifié** contre le stockage local, puis par le parcours complet rejoué avec la
+politique en place.

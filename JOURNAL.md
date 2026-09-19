@@ -1555,3 +1555,98 @@ nappe de la tonalité qui sonne.
 - **Le bouclage des nappes importées** : les fichiers du commerce sont conçus pour
   boucler proprement, et c'est ce qui est supposé. Un fichier qui ne boucle pas
   s'entendra ; aucun fondu au point de bouclage n'est appliqué.
+
+---
+
+# Phase 10 — Mise en production
+
+## 10.1 — Ce qui se prépare sans pouvoir s'exécuter
+
+Cette phase a une particularité : la plus grande partie de son objet — déployer —
+ne peut pas être exécutée ici. Ni compte Fly.io, ni compte Modal, ni domaine, ni
+base de production. Le travail a donc consisté à séparer ce qui se vérifie de ce
+qui ne se vérifie pas, et à réduire le second au minimum.
+
+Se vérifient, et ont été exécutés : le contrôle de configuration, le contrôle de
+réversibilité des migrations, la politique CORS du stockage, le dépôt et la
+rétention des sauvegardes, le nettoyage des objets orphelins, la page légale.
+
+Ne se vérifient pas : `flyctl deploy`, `modal deploy`, l'obtention d'un certificat.
+Les commandes sont celles de la documentation de chaque outil, et c'est dit.
+
+## 10.2 — Une adresse de lecture ne peut plus être publique
+
+Le défaut le plus grave de cette phase n'a pas été introduit par elle : il
+dormait depuis la phase 4.
+
+`presignDownload` renvoyait une **URL publique et permanente** dès que
+`S3_PUBLIC_URL` était renseignée — sans signature, sans expiration. La variable
+était vide partout, donc rien ne l'avait jamais révélé. Mais elle s'appelle
+« URL publique », la documentation de déploiement allait pousser à la renseigner
+pour brancher un CDN, et la page légale que je venais d'écrire affirme :
+« Les adresses de téléchargement sont signées et expirent au bout de quelques
+minutes. »
+
+Le code contredisait la promesse au moment précis où on l'aurait configuré.
+
+Le chemin est supprimé. Mettre un CDN devant des fichiers privés demanderait de
+les signer **au niveau du CDN** : une signature S3 porte sur l'hôte, et le
+réécrire l'invalide. Ce n'est pas implémenté, donc le seau ne doit jamais être
+rendu public. Le CDN garde sa place devant l'application, dont les fichiers
+statiques sont publics par nature.
+
+## 10.3 — Le CORS, ou l'échec sans trace
+
+L'audio ne transite jamais par l'application : le navigateur dépose et récupère
+directement sur le stockage. Ce sont donc des requêtes inter-origines — et sans
+politique CORS, le navigateur les refuse **avant de les émettre**. L'envoi échoue
+sans qu'aucune ligne n'apparaisse côté serveur.
+
+MinIO et SeaweedFS sont permissifs par défaut, ce qui masque entièrement le
+problème en développement. R2 ne l'est pas. `pnpm s3:cors` pose la politique, et
+elle a été vérifiée ici : appliquée au stockage local, relue, puis le parcours
+complet — inscription, envoi, traitement, lecture — rejoué avec elle en place.
+
+Au passage, cette vérification a failli produire un faux diagnostic. Le parcours
+échouait, et la politique CORS venait d'être posée : le rapprochement était
+tentant. Le dépôt avait en réalité réussi, le job était en file, et c'était le
+worker qui ne tournait pas. Vérifier avant de conclure aura épargné une
+« correction » d'un défaut inexistant.
+
+## 10.4 — Deux gardes avant de déployer
+
+`pnpm preflight` refuse une configuration incomplète ou restée à ses valeurs
+d'exemple, et connaît les particularités de R2 : `S3_REGION` doit valoir `auto`,
+`S3_FORCE_PATH_STYLE` doit être faux. Ces deux-là produisent une erreur de
+signature dont le message ne dit rien de la cause.
+
+`node scripts/check-migrations.mjs` signale ce qui rendrait le retour arrière
+destructif. Il n'échoue pas : une migration destructive est parfois le bon choix.
+Elle doit seulement être vue avant d'être fusionnée.
+
+Les deux ont été vérifiés dans les deux sens, contrôle négatif compris.
+
+## 10.5 — Definition of Done
+
+| Critère                                   | Résultat                                                                            |
+| ----------------------------------------- | ----------------------------------------------------------------------------------- |
+| Fly.io, deux régions, sondes de santé     | ⚠️ configuré, **non déployé** — aucun compte ici                                    |
+| Migrations jouées à la release            | ⚠️ `release_command` déclaré, non exécuté                                           |
+| Worker GPU serverless, scale-to-zero      | ⚠️ `min_containers: 0`, **non déployé**                                             |
+| R2 + CDN                                  | ✅ configuration vérifiée ; CDN **volontairement absent** de l'audio                |
+| CORS du stockage                          | ✅ appliqué et vérifié par le parcours complet                                      |
+| Domaine et TLS                            | ⚠️ documenté, **non obtenu**                                                        |
+| Déploiement par GitHub Actions sur `main` | ⚠️ workflow écrit, non exécuté                                                      |
+| Procédure de retour arrière éprouvée      | ⚠️ écrite ; les scripts qu'elle appelle sont exécutés, pas les commandes des outils |
+| Page légale                               | ✅ trois engagements, testés et accessibles AA                                      |
+
+**Tests** : 135 E2E sur trois formats.
+
+**Non vérifié — et ce qui manque pour l'être**
+
+- **Le déploiement lui-même** : il faut un compte Fly.io, un compte Modal, un
+  domaine. Ce sont des accès que je n'ai pas.
+- **`pg_dump`** : non installable ici, quatre approches distinctes. Le dépôt et la
+  rétention, eux, sont exécutés pour de bon.
+- **La remontée Sentry** : le DSN est un secret que je n'ai pas.
+- **L'installation sur Chrome Android et Safari iOS** : aucun appareil ici.

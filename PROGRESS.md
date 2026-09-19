@@ -12,7 +12,7 @@
 | 7     | PWA et hors-ligne          | ✅ terminée | 2026-09-18 | Installation Chrome Android / Safari iOS non constatée (aucun appareil ici)  |
 | 8     | Durcissement               | ✅ terminée | 2026-09-18 | `pg_dump` non exécutable ici ; DSN Sentry manquant (voir DECISIONS.md)       |
 | 9     | Paroles et traduction      | ✅ terminée | 2026-09-18 | Qualité sur du chant non constatée (aucun extrait chanté libre ici)          |
-| 10    | Production                 | ⏳ à venir  | —          | Anciennement phase 9                                                         |
+| 10    | Production                 | ✅ terminée | 2026-09-19 | Déploiement non exécuté : ni compte Fly.io, ni compte Modal, ni domaine      |
 
 ---
 
@@ -322,3 +322,38 @@ demande, avant la mise en production qui devient la phase 10.
   disponible ici. À constater sur un vrai morceau.
 - **Le modèle `large-v3`** : seul `small` a été exécuté ici. Le passage se fait par
   `WHISPER_MODEL`, mais ni le temps ni la qualité n'ont été mesurés.
+
+---
+
+## Phase 10 — Mise en production (2026-09-19)
+
+**Vérifié par exécution**
+
+| Critère                        | Vérification                                                  |
+| ------------------------------ | ------------------------------------------------------------- |
+| Page légale                    | ✅ usage personnel, aucun partage, suppression — testée et AA |
+| CORS du stockage               | ✅ appliqué, relu, parcours complet rejoué avec               |
+| Adresses de lecture privées    | ✅ signature et expiration vérifiées par test                 |
+| Contrôle de configuration      | ✅ `pnpm preflight`, particularités R2 comprises              |
+| Réversibilité des migrations   | ✅ `check-migrations.mjs`, contrôle négatif                   |
+| Sauvegardes : dépôt, rétention | ✅ exécutés contre le stockage objet                          |
+| Nettoyage des orphelins        | ✅ 34 objets réels supprimés, 1680 légitimes intacts          |
+
+**Écrit mais non exécuté** — et ce qui manque pour l'être
+
+| Élément                        | Ce qui manque                          |
+| ------------------------------ | -------------------------------------- |
+| `flyctl deploy` (web et ML)    | un compte Fly.io                       |
+| `modal deploy` (worker GPU)    | un compte Modal                        |
+| Domaine et TLS                 | un domaine                             |
+| Déploiement par GitHub Actions | les trois ci-dessus                    |
+| `pg_dump`                      | non installable ici (quatre approches) |
+| Remontée Sentry                | un DSN                                 |
+| Installation Android et iOS    | un appareil                            |
+
+**Tests** : 135 E2E sur trois formats, 178 du moteur audio, 222 Python, 98 de
+théorie musicale, 85 de contrats.
+
+**Décision de conception notable.** Aucun CDN ne sert l'audio : une signature S3
+porte sur l'hôte, et le réécrire l'invalide. Le seau ne doit jamais être rendu
+public — voir `DECISIONS.md`.
