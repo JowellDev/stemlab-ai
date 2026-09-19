@@ -1,11 +1,14 @@
 import { Button, Slider, cn } from '@stemlab/ui'
-import { Timer } from 'lucide-react'
+import { RotateCw, Timer } from 'lucide-react'
 
 interface MetronomeControlProps {
   enabled: boolean
   volume: number
+  accentBeat: number
+  beatsPerBar: number
   onEnabledChange: (value: boolean) => void
   onVolumeChange: (value: number) => void
+  onShiftAccent: () => void
 }
 
 /**
@@ -19,8 +22,11 @@ interface MetronomeControlProps {
 export function MetronomeControl({
   enabled,
   volume,
+  accentBeat,
+  beatsPerBar,
   onEnabledChange,
   onVolumeChange,
+  onShiftAccent,
 }: MetronomeControlProps) {
   return (
     <section
@@ -53,6 +59,23 @@ export function MetronomeControl({
       <span className="text-muted-foreground w-10 shrink-0 text-right text-xs tabular-nums">
         {Math.round(volume * 100)} %
       </span>
+
+      {/* La mesure detectee est une estimation : si le « un » ne tombe pas au
+          bon endroit, ce bouton le recale sans rien relancer. */}
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        disabled={!enabled || beatsPerBar < 2}
+        onClick={onShiftAccent}
+        title="Deplacer l accent d un temps"
+        className="shrink-0"
+      >
+        <RotateCw aria-hidden className="size-4" />
+        <span className="tabular-nums">
+          Accent : {accentBeat}/{beatsPerBar}
+        </span>
+      </Button>
     </section>
   )
 }

@@ -33,6 +33,15 @@ export interface MetronomeOptions {
    * pulsations par minute. On l'entend comme un contretemps.
    */
   readonly latency?: number
+  /**
+   * Rang du temps accentue dans la mesure, a partir de 1.
+   *
+   * La detection de la grille est une estimation : sur certains morceaux, la
+   * mesure est trouvee un temps trop tot ou trop tard. Le musicien, lui, sait
+   * ou tombe le « un » — ce reglage lui permet de recaler l'accent sans rien
+   * relancer.
+   */
+  readonly accentBeat?: number
 }
 
 /**
@@ -53,6 +62,7 @@ export class Metronome {
   readonly #beatHz: number
 
   #latency: number
+  #accentBeat: number
   #beats: readonly MetronomeBeat[] = []
   /** Index du prochain temps a programmer. */
   #next = 0
@@ -66,6 +76,7 @@ export class Metronome {
     this.#accentHz = options.accentHz ?? 1600
     this.#beatHz = options.beatHz ?? 1000
     this.#latency = Math.max(0, options.latency ?? 0)
+    this.#accentBeat = Math.max(1, Math.round(options.accentBeat ?? 1))
 
     this.#gain = context.createGain()
     this.#gain.gain.value = options.volume ?? 0.35
@@ -81,6 +92,29 @@ export class Metronome {
     // tableau desordonne ferait sauter des temps.
     this.#beats = [...beats].sort((a, b) => a.time - b.time)
     this.reset()
+  }
+
+  /** Nombre de temps par mesure, deduit des temps fournis. */
+  get beatsPerBar(): number {
+    let maximum = 1
+    for (const beat of this.#beats) maximum = Math.max(maximum, beat.position)
+    return maximum
+  }
+
+  get accentBeat(): number {
+    return this.#accentBeat
+  }
+
+  /**
+   * Deplace l'accent sur un autre temps de la mesure.
+   *
+   * Prend effet au prochain temps programme : les clics deja en file gardent
+   * l'ancien accent, ce qui s'entend au plus sur une fraction de mesure.
+   */
+  setAccentBeat(beat: number): void {
+    const parMesure = this.beatsPerBar
+    // Ramene dans la mesure : cycler au-dela de son dernier temps revient au premier.
+    this.#accentBeat = ((Math.round(beat) - 1 + parMesure) % parMesure) + 1
   }
 
   /** Retard du moteur, mesure une fois le materiel charge. */
@@ -134,7 +168,10 @@ export class Metronome {
       if (beat.time >= position) {
         // L'ecart est en temps de morceau : il se divise par la vitesse. Le
         // retard du moteur, lui, est deja en temps reel et s'ajoute tel quel.
-        this.#click(now + (beat.time - position) / rate + this.#latency, beat.position === 1)
+        this.#click(
+          now + (beat.time - position) / rate + this.#latency,
+          beat.position === this.#accentBeat,
+        )
       }
       this.#next += 1
     }

@@ -183,6 +183,38 @@ describe('Metronome', () => {
     expect(context.createdOscillators[0]!.startedAt).toBeCloseTo(10, 5)
   })
 
+  it('deduit le nombre de temps par mesure', () => {
+    expect(metronome.beatsPerBar).toBe(4)
+  })
+
+  it('accentue le premier temps par defaut', () => {
+    expect(metronome.accentBeat).toBe(1)
+  })
+
+  it('deplace l accent sur un autre temps', () => {
+    metronome.setAccentBeat(2)
+    metronome.schedule(0, 1, 10)
+
+    // Le temps a 0 s est le rang 1 : il ne doit plus etre accentue.
+    const premier = context.createdOscillators[0]!
+    metronome.schedule(0.3, 1, 10.3)
+    const second = context.createdOscillators[1]!
+
+    expect(premier.frequency.value).toBeLessThan(second.frequency.value)
+  })
+
+  it('ramene l accent dans la mesure', () => {
+    // Cycler au-dela du dernier temps revient au premier.
+    metronome.setAccentBeat(5)
+    expect(metronome.accentBeat).toBe(1)
+
+    metronome.setAccentBeat(0)
+    expect(metronome.accentBeat).toBe(4)
+
+    metronome.setAccentBeat(-1)
+    expect(metronome.accentBeat).toBe(3)
+  })
+
   it('borne le volume', () => {
     metronome.setVolume(5)
     expect(context.createdGains[0]!.gain.target).toBe(1)

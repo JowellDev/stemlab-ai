@@ -180,8 +180,11 @@ export function TrackWorkspace({
           <MetronomeControl
             enabled={metronome.enabled}
             volume={metronome.volume}
+            accentBeat={metronome.accentBeat}
+            beatsPerBar={metronome.beatsPerBar}
             onEnabledChange={metronome.setEnabled}
             onVolumeChange={metronome.setVolume}
+            onShiftAccent={metronome.shiftAccent}
           />
         ) : null}
         <SpeedControl rate={rate} onChange={onRateChange} />

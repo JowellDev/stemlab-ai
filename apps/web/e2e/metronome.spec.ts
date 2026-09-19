@@ -106,3 +106,43 @@ test('eteint, il ne sonne pas', async ({ page }) => {
 
   expect(await clicks(page)).toHaveLength(0)
 })
+
+test('l accent se recale sur un autre temps', async ({ page }) => {
+  await watchClicks(page)
+  await openReadyTrack(page)
+
+  const decaler = region(page).getByRole('button', { name: /Accent :/ })
+  // Le reglage n'a pas de sens tant que le metronome est eteint.
+  await expect(decaler).toBeDisabled()
+
+  await region(page).getByRole('button', { name: 'Metronome' }).click()
+  await expect(decaler).toBeEnabled()
+  await expect(decaler).toHaveText(/Accent : 1\/4/)
+
+  await decaler.click()
+  await expect(decaler).toHaveText(/Accent : 2\/4/)
+
+  // Le reglage boucle sur la mesure : apres le dernier temps, on revient au premier.
+  await decaler.click()
+  await decaler.click()
+  await expect(decaler).toHaveText(/Accent : 4\/4/)
+  await decaler.click()
+  await expect(decaler).toHaveText(/Accent : 1\/4/)
+})
+
+test('l accent decale change le temps accentue', async ({ page }) => {
+  await watchClicks(page)
+  await openReadyTrack(page)
+
+  await region(page).getByRole('button', { name: 'Metronome' }).click()
+  await region(page).getByRole('button', { name: /Accent :/ }).click()
+  await page.getByRole('button', { name: 'Lire' }).click()
+
+  await expect.poll(async () => (await clicks(page)).length, { timeout: 20_000 }).toBeGreaterThan(4)
+
+  // Un accent par mesure, quel que soit le temps sur lequel il tombe.
+  const liste = await clicks(page)
+  const accents = liste.filter((click) => click.hz > 1200).length
+  expect(accents).toBeGreaterThan(0)
+  expect(accents).toBeLessThan(liste.length)
+})
