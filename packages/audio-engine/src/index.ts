@@ -7,6 +7,7 @@ export * from './decode.js'
 export * from './emitter.js'
 export * from './peaks.js'
 export * from './observe-position.js'
+export * from './metronome.js'
 export * from './engines/index.js'
 
 export {

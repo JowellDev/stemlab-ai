@@ -59,6 +59,9 @@ export class FakeOscillatorNode {
   readonly connections = new Set<object>()
   started = false
   stopped = false
+  /** Instant demande au demarrage : c'est lui qui porte la justesse rythmique. */
+  startedAt: number | null = null
+  stoppedAt: number | null = null
 
   connect(destination: object): void {
     this.connections.add(destination)
@@ -68,12 +71,14 @@ export class FakeOscillatorNode {
     this.connections.clear()
   }
 
-  start(_when?: number): void {
+  start(when?: number): void {
     this.started = true
+    this.startedAt = when ?? 0
   }
 
-  stop(_when?: number): void {
+  stop(when?: number): void {
     this.stopped = true
+    this.stoppedAt = when ?? null
   }
 }
 

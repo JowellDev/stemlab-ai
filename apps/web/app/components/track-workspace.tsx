@@ -13,6 +13,7 @@ import { Gauge, Info, Music2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChordPanel } from '~/components/chords/chord-panel'
 import { LyricsPanel } from '~/components/lyrics/lyrics-panel'
+import { MetronomeControl } from '~/components/player/metronome-control'
 import { PlayerControls, type PlayerStem } from '~/components/player/player-controls'
 import { ShortcutLegend } from '~/components/player/shortcut-legend'
 import { StatusBadge } from '~/components/player/status-badge'
@@ -20,6 +21,7 @@ import { OfflineToggle } from '~/components/offline-toggle'
 import { useOfflineTrack } from '~/hooks/use-offline-track'
 import { usePlayPause, useMultitrackPlayer } from '~/hooks/use-multitrack-player'
 import { createLazyOfflineFetch } from '~/lib/offline.client'
+import { useMetronome } from '~/hooks/use-metronome'
 
 interface TrackWorkspaceProps {
   trackId: string
@@ -107,6 +109,11 @@ export function TrackWorkspace({
 
   const keyRoot = useMemo(() => (analysis ? (pitchClassIndex(analysis.key) ?? 0) : 0), [analysis])
 
+  // Les temps viennent de l'analyse, pas d'une grille calculee : ils suivent
+  // l'interpretation, y compris quand elle respire.
+  const beats = useMemo(() => analysis?.beats ?? [], [analysis])
+  const metronome = useMetronome(player, beats)
+
   return (
     <section className="flex flex-col gap-5" aria-label={`Morceau — ${title}`}>
       <header className="flex flex-wrap items-baseline justify-between gap-2">
@@ -169,6 +176,14 @@ export function TrackWorkspace({
       ) : null}
 
       <div className="flex flex-col gap-2">
+        {beats.length > 0 ? (
+          <MetronomeControl
+            enabled={metronome.enabled}
+            volume={metronome.volume}
+            onEnabledChange={metronome.setEnabled}
+            onVolumeChange={metronome.setVolume}
+          />
+        ) : null}
         <SpeedControl rate={rate} onChange={onRateChange} />
         <PitchControl
           semitones={semitones}
