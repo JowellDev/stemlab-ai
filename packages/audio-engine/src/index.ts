@@ -17,3 +17,4 @@ export {
   MultitrackPlayer,
   type MultitrackPlayerOptions,
 } from './multitrack-player.js'
+export * from './pad/index.js'

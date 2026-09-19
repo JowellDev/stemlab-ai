@@ -79,14 +79,19 @@ export async function presignUpload(options: {
   }
 }
 
-/** URL de lecture. Passe par le CDN quand il est configure. */
+/**
+ * URL de lecture, toujours signee et toujours expirante.
+ *
+ * Il n'existe volontairement aucun chemin qui rende une adresse publique
+ * permanente. Un morceau appartient a son proprietaire, et une adresse qui
+ * n'expire pas est une adresse partageable — ce que le service promet de ne pas
+ * permettre.
+ *
+ * Mettre un CDN devant ces fichiers demanderait de les signer au niveau du CDN :
+ * une signature S3 porte sur l'hote, et reecrire l'hote l'invalide. Ce n'est pas
+ * implemente, et le seau ne doit donc jamais etre rendu public.
+ */
 export async function presignDownload(key: string): Promise<string> {
-  if (env.S3_PUBLIC_URL) {
-    return new URL(
-      key,
-      env.S3_PUBLIC_URL.endsWith('/') ? env.S3_PUBLIC_URL : `${env.S3_PUBLIC_URL}/`,
-    ).toString()
-  }
   const command = new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: key })
   return getSignedUrl(client, command, { expiresIn: DOWNLOAD_URL_TTL_SECONDS })
 }

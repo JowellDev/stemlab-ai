@@ -14,7 +14,7 @@ import { env, isProduction } from '~/lib/env.server'
 /** Origines jointes directement par le navigateur, hors application. */
 function externalOrigins(): string[] {
   const origins = new Set<string>()
-  for (const url of [env.S3_PUBLIC_URL, env.S3_ENDPOINT]) {
+  for (const url of [env.S3_ENDPOINT]) {
     if (!url) continue
     try {
       origins.add(new URL(url).origin)

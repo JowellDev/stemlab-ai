@@ -11,6 +11,7 @@
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "check:bundle": "node scripts/check-bundle-secrets.mjs",
+    "preflight": "node scripts/preflight.mjs",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "turbo run test",
@@ -18,10 +19,14 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
     "services": "bash scripts/dev-services.sh",
+    "soundfont": "node scripts/fetch-soundfont.mjs",
+    "s3:cors": "node scripts/ensure-cors.mjs",
     "db:migrate": "pnpm --filter @stemlab/database migrate",
     "db:generate": "pnpm --filter @stemlab/database generate",
     "db:studio": "pnpm --filter @stemlab/database studio",
-    "db:deploy": "pnpm --filter @stemlab/database migrate:deploy"
+    "db:deploy": "pnpm --filter @stemlab/database migrate:deploy",
+    "compose:up": "docker compose -f infra/docker-compose.yml up -d",
+    "compose:down": "docker compose -f infra/docker-compose.yml down"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1134.0",

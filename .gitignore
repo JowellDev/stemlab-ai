@@ -58,3 +58,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# apercus audio du pad, rendus a la demande
+pad-previews/
+
+# banque d echantillons du pad, recuperee par pnpm soundfont
+apps/web/public/soundfonts/

@@ -1126,3 +1126,138 @@ transcription manquée reviendrait à jeter le travail utile.
 **Corollaire.** Un morceau instrumental rend `null`, pas une liste vide : un
 résultat vide serait indistinguable d'un échec. Et un retraitement sans paroles
 efface celles de la version précédente, plutôt que de les laisser derrière.
+
+---
+
+## 2026-09-18 — Le pad synthétise ses timbres plutôt que de charger des échantillons
+
+**Décision.** Les huit voix du pad sont des empilements de partiels synthétisés,
+et la réverbération une réponse impulsionnelle générée.
+
+**Pourquoi.** Une nappe tenue est précisément ce que la synthèse additive rend le
+mieux. Des échantillons apporteraient un réalisme que personne ne perçoit sous
+une nappe, en échange de plusieurs dizaines de mégaoctets à télécharger — et d'un
+pad inutilisable hors connexion tant qu'ils ne le sont pas.
+
+**Conséquence utile.** Les voix sont des **données**. En ajouter une, ou corriger
+un timbre à l'oreille, ne demande pas de toucher au moteur.
+
+---
+
+## 2026-09-18 — Un accord par groupe d'oscillateurs
+
+**Décision.** Chaque accord joué crée son propre groupe d'oscillateurs, détruit
+une fois sa descente terminée. Rien n'est réutilisé d'un accord au suivant.
+
+**Pourquoi.** La continuité est tout l'objet d'une nappe : le nouvel accord doit
+monter pendant que l'ancien descend. Réutiliser les oscillateurs en changeant
+leur fréquence produirait un glissando — un effet, pas un fondu.
+
+**Coût accepté.** Quelques dizaines d'oscillateurs vivent simultanément pendant le
+recouvrement. C'est sans effet mesurable : ce sont des oscillateurs, pas des
+décodeurs.
+
+---
+
+## 2026-09-18 — La grille du pad est diatonique, pas chromatique
+
+**Décision.** Le pad propose les accords de la tonalité choisie — sept degrés plus
+un emprunt — et non les douze fondamentales.
+
+**Pourquoi.** Un pad se joue sans regarder, pendant qu'on fait autre chose.
+Chercher un accord dans une grille de douze est exactement ce qu'il faut éviter ;
+une grille diatonique se lit sans y penser.
+
+**L'emprunt retenu.** En majeur, le `bVII` — omniprésent dans le répertoire de
+louange, là où le `vii°` n'est jamais joué. En mineur, le `V` majeur, aux côtés du
+`v` naturel : c'est lui qui résout, mais les deux restent offerts.
+
+**Limite assumée.** Les accords hors tonalité — emprunts plus rares, dominantes
+secondaires — ne sont pas accessibles. Changer de tonalité reste possible d'un
+clic ; au-delà, ce serait un autre instrument.
+
+---
+
+## 2026-09-18 — Trois sources pour le pad, et ce que chacune implique
+
+**Constat.** Les nappes de louange vendues dans le commerce sont des **fichiers
+audio produits en studio, un par tonalité** — pas des synthétiseurs. Aucune
+synthèse dans un navigateur ne les égalera : la valeur est dans l'enregistrement.
+
+**Décision.** Trois sources coexistent, chacune assumée pour ce qu'elle est.
+
+| Source       | Ce qu'elle apporte                    | Ce qu'elle coûte                          |
+| ------------ | ------------------------------------- | ----------------------------------------- |
+| Synthèse     | rien à télécharger, marche hors ligne | ne sonnera jamais comme un enregistrement |
+| Échantillons | le grain d'instruments réels          | 24 Mo au premier usage ; nappes GM datées |
+| Vos nappes   | exactement le son voulu               | il faut posséder les fichiers             |
+
+**Corollaire assumé.** Une nappe enregistrée couvre une tonalité entière, pas un
+accord. Le modèle d'interaction diffère donc des deux autres sources, et
+l'interface l'énonce plutôt que de laisser croire à un défaut.
+
+---
+
+## 2026-09-18 — Aucun effet sur les nappes importées
+
+**Décision.** La chaîne de réverbération et d'écho est contournée pour la source
+« Mes nappes ». Les réglages qui n'ont pas de prise sont masqués ou désactivés.
+
+**Pourquoi.** Ces fichiers sortent d'un studio, réverbération comprise. Leur en
+superposer une seconde ne les améliorerait pas, elle les embrouillerait. Et un
+réglage qui bouge sans rien changer est pire qu'un réglage absent : il fait douter
+de tout le reste.
+
+---
+
+## 2026-09-18 — La tonalité se lit par jetons, pas par recherche de lettre
+
+**Constat.** Chercher une note n'importe où dans un nom de fichier lit `A` dans
+« Ambient », `D` dans « Dwell » et `G` dans « Grandiose ». Les noms de
+bibliothèques en sont pleins.
+
+**Décision.** Le nom est découpé en jetons, et seul un jeton qui **est** une
+tonalité est reconnu : `C`, `F#`, `Bbm`, `Amaj`, ou une note suivie de
+`major`/`minor`. En l'absence de mode, le majeur est choisi — beaucoup de
+bibliothèques ne le précisent pas, une nappe tenue étant souvent jouable dans les
+deux.
+
+**Garde-fou.** La tonalité devinée reste modifiable : elle fait gagner vingt-quatre
+réglages, elle n'engage rien.
+
+---
+
+## 2026-09-19 — Aucun CDN devant l'audio, et le seau reste privé
+
+**Défaut corrigé.** `presignDownload` renvoyait une adresse publique et permanente
+dès que `S3_PUBLIC_URL` était renseignée. La variable était vide partout, mais la
+documentation de déploiement allait précisément pousser à la renseigner pour
+brancher un CDN — et la page légale promet des adresses signées et expirantes.
+
+**Décision.** Le chemin est supprimé, et la variable avec lui. Toute adresse de
+lecture est signée et expire au bout d'une heure.
+
+**Pourquoi pas un CDN signé.** Une signature S3 porte sur l'hôte : réécrire l'hôte
+pour pointer vers un CDN l'invalide. Il faudrait signer au niveau du CDN, avec son
+propre mécanisme. C'est faisable, ce n'est pas fait, et prétendre le contraire
+ferait courir un risque à des fichiers qui ne nous appartiennent pas.
+
+**Ce que le CDN garde.** Les fichiers statiques de l'application, publics par
+nature et déjà précachés par le service worker.
+
+---
+
+## 2026-09-19 — La politique CORS est posée explicitement
+
+**Constat.** Sans politique CORS, le navigateur refuse les dépôts inter-origines
+**avant de les émettre** : l'envoi échoue sans qu'aucune trace n'apparaisse côté
+serveur. MinIO et SeaweedFS sont permissifs par défaut, ce qui masque entièrement
+le problème en développement ; R2 ne l'est pas.
+
+**Décision.** `scripts/ensure-cors.mjs` pose une politique nominative — les
+origines de l'application, pas `*`. Une politique ouverte laisserait n'importe
+quel site utiliser une adresse présignée interceptée ; elles expirent, mais la
+fenêtre suffirait.
+
+**Vérifié** contre le stockage local, puis par le parcours complet rejoué avec la
+politique en place.

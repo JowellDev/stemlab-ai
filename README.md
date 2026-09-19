@@ -74,7 +74,7 @@ Trois principes structurent le découpage :
 │  ├─ database/            schéma Prisma, migrations, client généré
 │  ├─ music/               théorie musicale : transposition, grille, recherche
 │  ├─ ui/                  composants shadcn/ui et thème partagé
-│  ├─ audio-engine/        moteur Web Audio, sans dépendance à un framework
+│  ├─ audio-engine/        moteur Web Audio + pad d'accords, sans framework
 │  └─ offline/             stockage OPFS, budget, file d'envoi différée
 ├─ infra/
 │  ├─ docker-compose.yml   stack de développement complète
@@ -198,6 +198,7 @@ curl -X POST http://127.0.0.1:8000/jobs \
 | `pnpm lint`       | ESLint, puis `ruff check` et `ruff format --check`   |
 | `pnpm test`       | Vitest et pytest                                     |
 | `pnpm test:e2e`   | Playwright                                           |
+| `pnpm soundfont`  | récupère la banque d'échantillons du pad (24 Mo)     |
 | `pnpm format`     | Prettier en écriture                                 |
 | `pnpm services`   | services locaux sans Docker                          |
 | `pnpm db:migrate` | migration Prisma en développement                    |
@@ -239,6 +240,68 @@ classiques — le tempo déplace alors aussi la hauteur, et l'interface le signa
 
 ---
 
+## Pad d'accords
+
+Une page autonome (`/pad`) pour accompagner un temps de chant ou une répétition :
+on choisit une tonalité, on touche un accord, il se tient jusqu'au suivant.
+
+```
+tonalite ──► grille diatonique ──► [ C ][ Dm ][ Em ][ F ]
+                                    [ G ][ Am ][Bdim][ Bb ]
+                                      │
+                                      └─► nappe tenue, fondu enchaine
+```
+
+**La grille est diatonique, pas chromatique.** Un pad se joue sans regarder :
+chercher un accord parmi douze est exactement ce qu'il faut éviter. Huit pads —
+les sept degrés, plus un emprunt utile : le `bVII` en majeur, le `V` majeur en
+mineur, tous deux omniprésents dans le répertoire de louange.
+
+**Trois sources, assumées pour ce qu'elles sont.**
+
+| Source           | Ce qu'elle apporte                    | Ce qu'elle coûte                          |
+| ---------------- | ------------------------------------- | ----------------------------------------- |
+| **Synthèse**     | rien à télécharger, marche hors ligne | ne sonnera jamais comme un enregistrement |
+| **Échantillons** | le grain d'instruments réels          | 24 Mo au premier usage ; nappes GM datées |
+| **Mes nappes**   | exactement le son voulu               | il faut posséder les fichiers             |
+
+**Synthèse.** Huit timbres, aucun échantillon : unisson stéréo désaccordé, dérive
+lente et indépendante de chaque oscillateur, filtre qui respire, écho stéréo
+alterné et scintillement envoyé à la seule réverbération. Ce qui fait tenir une
+nappe, c'est le mouvement — pas le nombre de partiels.
+
+Chaque accord vit dans son propre groupe d'oscillateurs : le suivant monte pendant
+que le précédent descend. Réutiliser les oscillateurs produirait un glissando, pas
+un fondu.
+
+**Échantillons.** Un synthétiseur SoundFont (`spessasynth`, Apache-2.0) et la
+banque `FluidR3Mono_GM.sf3` (MIT). Récupérée par `pnpm soundfont`, jamais
+précachée, téléchargée par le navigateur au premier usage puis conservée
+localement. On peut charger sa propre banque `.sf2`.
+
+> **Licence.** FluidSynth a été écarté : son wrapper npm est en BSD, mais
+> **libfluidsynth est en LGPL v2.1** — la même raison qui avait fait écarter
+> SoundTouch en phase 6.
+
+**Mes nappes.** Le modèle des bibliothèques du commerce : un fichier par tonalité,
+tenu en boucle, avec un fondu enchaîné au changement de tonalité. La tonalité est
+lue dans le nom du fichier, et reste modifiable. **Aucun effet n'est ajouté** —
+ces enregistrements sortent d'un studio, réverbération comprise. Les fichiers
+restent sur l'appareil et ne passent jamais par le serveur.
+
+> Une nappe enregistrée couvre **une tonalité, pas un accord** : quel que soit le
+> pad touché, c'est la nappe de la tonalité qui sonne.
+
+Les pads sont colorés par fonction tonale — repos, départ, tension, couleur —
+et non par degré : quatre familles se lisent d'un coup d'œil, huit teintes
+demandent un décodage que personne ne fera en jouant.
+
+> **Détail qui compte.** Le `bVII` s'écrit `Bb` en do majeur, jamais `A#`, bien
+> que l'armure de do n'ait aucun bémol : l'orthographe suit la fonction — une
+> septième abaissée — et non l'armure.
+
+---
+
 ## Paroles et traduction
 
 La transcription porte sur le stem `vocals` **déjà isolé**, pas sur le mixage :
@@ -277,6 +340,42 @@ séparé, aucun octet supplémentaire dans le budget de stockage.
 | `TRANSCRIBE_LYRICS`   | `true`  | désactive l'étape entière                 |
 | `WHISPER_MODEL`       | `small` | `large-v3` en production                  |
 | `LYRICS_TRANSLATE_TO` | `fr,en` | langues cibles, séparées par des virgules |
+
+---
+
+## Stockage objet et CDN
+
+Le stockage est S3-compatible : MinIO ou SeaweedFS en développement, **Cloudflare
+R2** en production. Rien à changer dans le code — seule la configuration diffère.
+
+| Variable              | Développement            | R2                                                 |
+| --------------------- | ------------------------ | -------------------------------------------------- |
+| `S3_ENDPOINT`         | `http://localhost:59000` | `https://<compte>.r2.cloudflarestorage.com`        |
+| `S3_REGION`           | `us-east-1`              | **`auto`** — toute autre valeur casse la signature |
+| `S3_FORCE_PATH_STYLE` | `true`                   | **`false`**                                        |
+
+`pnpm preflight` vérifie ces deux dernières : l'erreur de signature qu'elles
+provoquent ne dit pas ce qui manque.
+
+**CORS.** L'audio ne transite jamais par l'application : le navigateur dépose et
+récupère directement. Ce sont donc des requêtes inter-origines, et sans politique
+CORS le navigateur les refuse **avant de les émettre** — l'envoi échoue sans
+laisser de trace côté serveur. MinIO et SeaweedFS sont permissifs par défaut, ce
+qui masque le problème ; R2 ne l'est pas.
+
+```bash
+pnpm s3:cors                      # applique la politique
+node scripts/ensure-cors.mjs --show
+```
+
+**Pas de CDN devant l'audio, et c'est délibéré.** Les adresses de lecture sont
+signées et expirent au bout d'une heure ; il n'existe aucun chemin qui rende une
+adresse publique permanente. Mettre un CDN devant ces fichiers demanderait de les
+signer au niveau du CDN — une signature S3 porte sur l'hôte, et le réécrire
+l'invalide. **Le seau ne doit jamais être rendu public.**
+
+Le CDN a sa place devant l'**application** : les fichiers statiques, eux, sont
+publics par nature et déjà précachés par le service worker.
 
 ---
 

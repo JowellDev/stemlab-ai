@@ -93,7 +93,7 @@ export default function Inscription({ loaderData, actionData }: Route.ComponentP
       subtitle={
         <>
           Deja inscrit ?{' '}
-          <Link to="/connexion" className="text-brand underline underline-offset-4">
+          <Link to="/login" className="text-brand underline underline-offset-4">
             Se connecter
           </Link>
         </>

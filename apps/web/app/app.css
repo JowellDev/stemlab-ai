@@ -39,3 +39,31 @@
     U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
     U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
+
+/*
+ * Respiration du pad actif.
+ *
+ * Un accord tenu ne bouge pas a l'ecran, alors qu'il continue de sonner. Ce
+ * battement tres lent — quatre secondes, l'amplitude d'un souffle — dit que le
+ * son est encore la sans attirer l'oeil.
+ */
+@keyframes stemlab-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--tw-ring-color, transparent);
+  }
+  50% {
+    box-shadow: 0 0 24px 2px var(--tw-ring-color, transparent);
+  }
+}
+
+@theme {
+  --animate-breathe: stemlab-breathe 4s ease-in-out infinite;
+}
+
+/* Le mouvement disparait pour qui le refuse : la couleur suffit a l'indiquer. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-breathe {
+    animation: none;
+  }
+}

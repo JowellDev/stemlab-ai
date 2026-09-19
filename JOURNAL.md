@@ -1328,3 +1328,325 @@ bascule la traduction.
 - **Le modèle `large-v3`** : seul `small` a été exécuté. Le passage à `large-v3`
   ne change que la valeur de `WHISPER_MODEL`, mais ni le temps ni la qualité n'ont
   été mesurés.
+
+---
+
+# Intermède — Pad d'accords
+
+Demandé en cours de phase 10, et construit avant de la reprendre.
+
+## A.1 — Ce qu'on tient dans la main
+
+Un pad d'accompagnement se joue d'une main pendant qu'on fait autre chose de
+l'autre. Toute la conception découle de là : une tonalité, une grille, et plus
+rien à décider en cours de route.
+
+Les accords proposés sont ceux de la **tonalité choisie** — pas les douze
+fondamentales chromatiques. Chercher un accord au milieu d'un chant est
+exactement ce qu'il faut éviter, et une grille diatonique se lit sans y penser.
+
+Huit pads : les sept degrés, plus un huitième. En majeur, c'est le **bVII**,
+emprunté au mixolydien, omniprésent dans le répertoire de louange — où il
+remplace souvent le vii°, que personne ne joue. En mineur, c'est le **V majeur**,
+emprunté au mineur harmonique : le v naturel existe et reste proposé, mais c'est
+le V qui résout. Les deux sont là ; le choix appartient au musicien.
+
+## A.2 — Le bVII s'écrit Bb, même en do majeur
+
+L'armure de do majeur n'a aucun bémol. La fonction du bVII, elle, est une
+**septième abaissée** : elle occupe la lettre du septième degré, donc `Bb` et
+jamais `A#`. L'orthographe suit la fonction, pas l'armure.
+
+Le test l'a attrapé immédiatement, et c'est le genre de détail qu'un musicien
+voit du premier coup d'œil. La correction tient en un champ facultatif sur le
+degré, qui impose son orthographe quand la fonction l'emporte.
+
+## A.3 — Huit timbres, aucun échantillon
+
+Une nappe tenue se synthétise très bien. Chaque voix est une liste de partiels —
+une onde, un rapport de fréquence, un gain, un désaccord — et c'est le
+**désaccord** entre partiels, plus que la forme d'onde, qui donne son épaisseur
+au son.
+
+Le bénéfice n'est pas théorique : plusieurs dizaines de mégaoctets
+d'échantillons en moins à télécharger, et un pad qui fonctionne hors connexion
+sans avoir rien préparé.
+
+La réverbération suit le même principe. Sa réponse impulsionnelle est un bruit
+dont l'amplitude décroît exponentiellement — soit exactement la forme d'une queue
+de réverbération dans une salle. Un enregistrement réel sonnerait plus juste,
+pour quelques centaines de kilo-octets et un gain que personne n'entendrait sous
+une nappe tenue.
+
+## A.4 — Le fondu enchaîné est le sujet
+
+Le principe d'une nappe est la continuité : passer d'un accord au suivant ne doit
+jamais laisser de trou.
+
+Chaque accord vit donc dans **son propre groupe d'oscillateurs**. Jouer un accord
+démarre le suivant pendant que le précédent s'éteint — les deux se recouvrent,
+comme deux mains sur un clavier. Rien n'est réutilisé d'un accord à l'autre :
+reconfigurer des oscillateurs en cours de route produirait un glissando, pas un
+fondu.
+
+Deux détails qui s'entendent :
+
+- la montée de l'enveloppe est **exponentielle**, parce que l'oreille perçoit le
+  volume en décibels ; une rampe linéaire s'entend comme une arrivée brutale
+  suivie d'un plateau ;
+- le **filtre s'ouvre avec l'attaque**. Une nappe qui s'éclaircit en montant sonne
+  vivante ; à timbre fixe, elle sonne comme un échantillon tenu.
+
+## A.5 — Quatre couleurs, pas huit
+
+Les pads sont colorés par **fonction tonale** — repos, départ, tension, couleur —
+et non par degré. Quatre familles se lisent d'un coup d'œil ; huit teintes
+demandent un effort de décodage que personne ne fournira en jouant.
+
+Le pad actif « respire » : un battement de quatre secondes, l'amplitude d'un
+souffle. Un accord tenu ne bouge pas à l'écran alors qu'il continue de sonner ;
+ce mouvement le dit sans attirer l'œil. Il disparaît pour qui refuse les
+animations — la couleur suffit alors.
+
+## A.6 — Prouver que ça sonne
+
+Un pad muet passerait tous les tests d'interface : les boutons changeraient
+d'état, la grille suivrait la tonalité, et rien ne sortirait des enceintes.
+
+Les tests de bout en bout instrumentent donc `OscillatorNode.prototype.start` et
+comptent les démarrages réels. C'est la seule chose observable de l'extérieur qui
+distingue un pad qui sonne d'un pad qui fait semblant.
+
+## A.7 — Definition of Done
+
+| Critère                                 | Résultat                                           |
+| --------------------------------------- | -------------------------------------------------- |
+| Choix de la tonalité, clic sur l'accord | ✅ douze fondamentales, majeur et mineur           |
+| Grille diatonique de la tonalité        | ✅ sept degrés + un emprunt utile                  |
+| Plusieurs timbres                       | ✅ huit, synthétisés, décrits en une phrase chacun |
+| Accords tenus, fondu enchaîné           | ✅ recouvrement vérifié, aucun trou                |
+| Enrichissements                         | ✅ triade, sus2, sus4, add9, septièmes             |
+| Élégant sur mobile                      | ✅ vérifié à 390 px                                |
+| **Du son est réellement produit**       | ✅ oscillateurs comptés au démarrage               |
+| Accessibilité AA et clavier             | ✅ axe + parcours clavier, sur les deux formats    |
+| Fonctionne hors connexion               | ✅ rien à télécharger : tout est synthétisé        |
+
+**Tests** : 24 du moteur audio, 24 de théorie, 10 E2E sur deux formats.
+
+**Non vérifié**
+
+- **Le rendu à l'oreille** : l'environnement n'a pas de sortie audio. Les
+  fréquences, les enveloppes et le recouvrement sont vérifiés par la mesure ; le
+  goût des timbres, non. À écouter, et à ajuster — les voix sont des données,
+  changer un partiel ne demande pas de toucher au moteur.
+
+---
+
+# Intermède — Trois sources pour le pad
+
+## B.1 — Ce que vend réellement la référence
+
+Le pad synthétisé ne convainquait pas. En cherchant la cause, j'ai regardé la
+plateforme citée en référence : _Warmth_, _Dwell_, _Plume_, _OB Ambient Pads_,
+_Ascent_… chaque produit est signé par un producteur, et la colonne de format
+indique partout **« Playback »**. Il existe même des collections « Minor Key »
+vendues séparément des majeures.
+
+Ce ne sont donc pas des synthétiseurs : ce sont des **fichiers audio produits en
+studio, un par tonalité**, lus en boucle et enchaînés par une application dédiée.
+La valeur est dans l'enregistrement, pas dans l'algorithme.
+
+Cela fixe une limite qu'il valait mieux énoncer que contourner : aucune synthèse
+dans un navigateur n'égalera ce son, parce que le produit _est_ le contenu. Trois
+réponses en découlent, et elles coexistent désormais.
+
+## B.2 — Ce qui manquait vraiment au pad synthétisé
+
+Avant de conclure quoi que ce soit, il fallait corriger la synthèse elle-même.
+Les premières voix étaient des empilements additifs figés : ni stéréo, ni
+mouvement, ni effets. Ce qui fait tenir une nappe, ce n'est pas le nombre de
+partiels, c'est le **mouvement** — unisson désaccordé réparti dans l'espace,
+dérive lente et indépendante de chaque oscillateur, filtre qui respire.
+
+Et surtout, les **effets** : la réverbération remplit l'espace, l'écho remplit le
+temps. L'écho est un envoi et non un insert, donc il continue de répéter pendant
+que l'accord suivant monte — c'est précisément la continuité recherchée.
+
+Le scintillement mérite une mention : une octave supérieure envoyée à la **seule**
+réverbération, avec sa propre enveloppe retardée. Les vrais effets de _shimmer_
+transposent la réinjection ; sans transposeur temps réel, une strate dédiée donne
+le même résultat pour rien.
+
+## B.3 — Une mesure qui a corrigé une erreur d'oreille
+
+Ne pouvant rien entendre, j'ai rendu chaque timbre en fichier hors-ligne et
+mesuré les crêtes. Résultat : jusqu'à **1,36** — cinq timbres sur huit écrêtaient.
+L'unisson, l'ensemble et la saturation ajoutent chacun de l'énergie, et des gains
+choisis à vue ne pouvaient pas le prévoir.
+
+Les gains ont été recalculés d'après ces mesures. Puis une courbe de saturation
+douce a été ajoutée en sortie : elle **borne mathématiquement** le signal, là où
+un compresseur laisse passer ce qui arrive plus vite que son temps d'attaque.
+
+## B.4 — La source échantillonnée, et une licence écartée
+
+`js-synthesizer` embarque FluidSynth. Son propre README l'indique :
+**libfluidsynth est en LGPL v2.1**, licence différente de celle du wrapper. C'est
+exactement la situation qui avait fait écarter SoundTouch en phase 6 — l'exigence
+de relien n'a pas de sens pour un module empaqueté dans un bundle navigateur.
+
+`spessasynth` (Apache-2.0) fait le même travail sans ce problème. La banque
+retenue est **FluidR3Mono_GM.sf3**, sous licence MIT, distribuée par le dépôt de
+MuseScore.
+
+Elle n'est ni versionnée ni précachée : vingt-quatre mégaoctets dans l'historique
+Git pénaliseraient chaque clone, et dans le précache du service worker, chaque
+installation. Elle se récupère par `pnpm soundfont`, et le navigateur ne la
+télécharge que si l'on demande une voix échantillonnée.
+
+Un détail qui s'entend : les notes communes à deux accords successifs ne sont
+**pas** relancées. Réattaquer une note déjà tenue s'entend comme un accroc, alors
+que l'enchaînement doit être continu. C'est la différence avec la synthèse, où
+chaque accord a ses propres oscillateurs.
+
+## B.5 — Vos propres nappes
+
+La troisième source suit le modèle de la référence : un fichier par tonalité, tenu
+en boucle, avec un fondu enchaîné au changement de tonalité.
+
+**Aucun effet n'est ajouté.** Ces fichiers sortent d'un studio, réverbération
+comprise. Les réglages qui n'ont pas de prise — timbre, douceur — sont masqués ou
+désactivés, plutôt que laissés actifs et sans effet.
+
+**La tonalité est lue dans le nom du fichier.** Les bibliothèques la mettent
+presque toujours, et la deviner évite vingt-quatre réglages manuels. Première
+tentative : chercher une note n'importe où dans le nom. Elle lisait `A` dans
+« Ambient », `D` dans « Dwell » et `G` dans « Grandiose » — les noms de fichiers
+en sont pleins. La version retenue découpe en **jetons entiers** et ne reconnaît
+qu'un jeton qui _est_ une tonalité : `C`, `F#`, `Bbm`, `Amaj`, ou une note suivie
+de `major`/`minor`.
+
+**Une nappe couvre une tonalité, pas un accord.** C'est l'écart de fond avec les
+deux autres sources, et l'interface le dit : quel que soit le pad touché, c'est la
+nappe de la tonalité qui sonne.
+
+## B.6 — Definition of Done
+
+| Critère                                  | Résultat                                                     |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| Synthèse : mouvement et effets           | ✅ unisson stéréo, dérive, filtre animé, écho, scintillement |
+| Aucun écrêtage                           | ✅ gains mesurés par rendu, sortie bornée par saturation     |
+| Source échantillonnée                    | ✅ SoundFont, licences vérifiées à la source                 |
+| Banque hors du dépôt et hors du précache | ✅ `pnpm soundfont`, cache local après premier usage         |
+| Banque personnelle                       | ✅ `.sf2`, `.sf3`, `.dls`                                    |
+| Nappes personnelles, une par tonalité    | ✅ tonalité lue dans le nom, fondu réglable                  |
+| Les fichiers ne quittent pas l'appareil  | ✅ stockage local dédié                                      |
+| Preuve que chaque source sonne           | ✅ oscillateurs comptés, fichiers comptés                    |
+| Accessibilité AA sur les trois sources   | ✅                                                           |
+
+**Tests** : 178 du moteur audio, 98 de théorie, 21 de bout en bout.
+
+**Non vérifié**
+
+- **Le rendu à l'oreille**, toujours : l'environnement n'a pas de sortie audio.
+  Les fréquences, enveloppes, recouvrements et niveaux sont mesurés ; le goût des
+  timbres, non. Des aperçus audio ont été rendus pour que ce jugement puisse être
+  porté.
+- **Le bouclage des nappes importées** : les fichiers du commerce sont conçus pour
+  boucler proprement, et c'est ce qui est supposé. Un fichier qui ne boucle pas
+  s'entendra ; aucun fondu au point de bouclage n'est appliqué.
+
+---
+
+# Phase 10 — Mise en production
+
+## 10.1 — Ce qui se prépare sans pouvoir s'exécuter
+
+Cette phase a une particularité : la plus grande partie de son objet — déployer —
+ne peut pas être exécutée ici. Ni compte Fly.io, ni compte Modal, ni domaine, ni
+base de production. Le travail a donc consisté à séparer ce qui se vérifie de ce
+qui ne se vérifie pas, et à réduire le second au minimum.
+
+Se vérifient, et ont été exécutés : le contrôle de configuration, le contrôle de
+réversibilité des migrations, la politique CORS du stockage, le dépôt et la
+rétention des sauvegardes, le nettoyage des objets orphelins, la page légale.
+
+Ne se vérifient pas : `flyctl deploy`, `modal deploy`, l'obtention d'un certificat.
+Les commandes sont celles de la documentation de chaque outil, et c'est dit.
+
+## 10.2 — Une adresse de lecture ne peut plus être publique
+
+Le défaut le plus grave de cette phase n'a pas été introduit par elle : il
+dormait depuis la phase 4.
+
+`presignDownload` renvoyait une **URL publique et permanente** dès que
+`S3_PUBLIC_URL` était renseignée — sans signature, sans expiration. La variable
+était vide partout, donc rien ne l'avait jamais révélé. Mais elle s'appelle
+« URL publique », la documentation de déploiement allait pousser à la renseigner
+pour brancher un CDN, et la page légale que je venais d'écrire affirme :
+« Les adresses de téléchargement sont signées et expirent au bout de quelques
+minutes. »
+
+Le code contredisait la promesse au moment précis où on l'aurait configuré.
+
+Le chemin est supprimé. Mettre un CDN devant des fichiers privés demanderait de
+les signer **au niveau du CDN** : une signature S3 porte sur l'hôte, et le
+réécrire l'invalide. Ce n'est pas implémenté, donc le seau ne doit jamais être
+rendu public. Le CDN garde sa place devant l'application, dont les fichiers
+statiques sont publics par nature.
+
+## 10.3 — Le CORS, ou l'échec sans trace
+
+L'audio ne transite jamais par l'application : le navigateur dépose et récupère
+directement sur le stockage. Ce sont donc des requêtes inter-origines — et sans
+politique CORS, le navigateur les refuse **avant de les émettre**. L'envoi échoue
+sans qu'aucune ligne n'apparaisse côté serveur.
+
+MinIO et SeaweedFS sont permissifs par défaut, ce qui masque entièrement le
+problème en développement. R2 ne l'est pas. `pnpm s3:cors` pose la politique, et
+elle a été vérifiée ici : appliquée au stockage local, relue, puis le parcours
+complet — inscription, envoi, traitement, lecture — rejoué avec elle en place.
+
+Au passage, cette vérification a failli produire un faux diagnostic. Le parcours
+échouait, et la politique CORS venait d'être posée : le rapprochement était
+tentant. Le dépôt avait en réalité réussi, le job était en file, et c'était le
+worker qui ne tournait pas. Vérifier avant de conclure aura épargné une
+« correction » d'un défaut inexistant.
+
+## 10.4 — Deux gardes avant de déployer
+
+`pnpm preflight` refuse une configuration incomplète ou restée à ses valeurs
+d'exemple, et connaît les particularités de R2 : `S3_REGION` doit valoir `auto`,
+`S3_FORCE_PATH_STYLE` doit être faux. Ces deux-là produisent une erreur de
+signature dont le message ne dit rien de la cause.
+
+`node scripts/check-migrations.mjs` signale ce qui rendrait le retour arrière
+destructif. Il n'échoue pas : une migration destructive est parfois le bon choix.
+Elle doit seulement être vue avant d'être fusionnée.
+
+Les deux ont été vérifiés dans les deux sens, contrôle négatif compris.
+
+## 10.5 — Definition of Done
+
+| Critère                                   | Résultat                                                                            |
+| ----------------------------------------- | ----------------------------------------------------------------------------------- |
+| Fly.io, deux régions, sondes de santé     | ⚠️ configuré, **non déployé** — aucun compte ici                                    |
+| Migrations jouées à la release            | ⚠️ `release_command` déclaré, non exécuté                                           |
+| Worker GPU serverless, scale-to-zero      | ⚠️ `min_containers: 0`, **non déployé**                                             |
+| R2 + CDN                                  | ✅ configuration vérifiée ; CDN **volontairement absent** de l'audio                |
+| CORS du stockage                          | ✅ appliqué et vérifié par le parcours complet                                      |
+| Domaine et TLS                            | ⚠️ documenté, **non obtenu**                                                        |
+| Déploiement par GitHub Actions sur `main` | ⚠️ workflow écrit, non exécuté                                                      |
+| Procédure de retour arrière éprouvée      | ⚠️ écrite ; les scripts qu'elle appelle sont exécutés, pas les commandes des outils |
+| Page légale                               | ✅ trois engagements, testés et accessibles AA                                      |
+
+**Tests** : 135 E2E sur trois formats.
+
+**Non vérifié — et ce qui manque pour l'être**
+
+- **Le déploiement lui-même** : il faut un compte Fly.io, un compte Modal, un
+  domaine. Ce sont des accès que je n'ai pas.
+- **`pg_dump`** : non installable ici, quatre approches distinctes. Le dépôt et la
+  rétention, eux, sont exécutés pour de bon.
+- **La remontée Sentry** : le DSN est un secret que je n'ai pas.
+- **L'installation sur Chrome Android et Safari iOS** : aucun appareil ici.

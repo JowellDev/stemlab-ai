@@ -60,10 +60,10 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           ) : (
             <>
               <Button asChild size="lg">
-                <Link to="/inscription">Creer un compte</Link>
+                <Link to="/signup">Creer un compte</Link>
               </Button>
               <Button asChild size="lg" variant="secondary">
-                <Link to="/connexion">Se connecter</Link>
+                <Link to="/login">Se connecter</Link>
               </Button>
             </>
           )}

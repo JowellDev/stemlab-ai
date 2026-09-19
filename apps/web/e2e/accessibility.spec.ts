@@ -50,6 +50,12 @@ test('la page d un morceau respecte AA', async ({ page }) => {
   expect(describe(violations)).toBe('')
 })
 
+test('la page legale respecte AA', async ({ page }) => {
+  await page.goto('/legal')
+  const { violations } = await analyze(page)
+  expect(describe(violations)).toBe('')
+})
+
 test('on atteint le depot de fichier au clavier seul', async ({ page }) => {
   await signUp(page, 'clavier')
 
