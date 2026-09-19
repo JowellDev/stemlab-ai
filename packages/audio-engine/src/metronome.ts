@@ -24,6 +24,15 @@ export interface MetronomeOptions {
   readonly accentHz?: number
   /** Frequence des autres temps. */
   readonly beatHz?: number
+  /**
+   * Retard entre la position annoncee par le lecteur et le son entendu.
+   *
+   * Le moteur d'etirement traite par blocs et rend sa sortie apres coup. Sans
+   * cette compensation, les clics tombent en avance de la latence du moteur —
+   * une centaine de millisecondes, soit un sixieme de temps a quatre-vingts
+   * pulsations par minute. On l'entend comme un contretemps.
+   */
+  readonly latency?: number
 }
 
 /**
@@ -43,6 +52,7 @@ export class Metronome {
   readonly #accentHz: number
   readonly #beatHz: number
 
+  #latency: number
   #beats: readonly MetronomeBeat[] = []
   /** Index du prochain temps a programmer. */
   #next = 0
@@ -55,6 +65,7 @@ export class Metronome {
     this.#context = context
     this.#accentHz = options.accentHz ?? 1600
     this.#beatHz = options.beatHz ?? 1000
+    this.#latency = Math.max(0, options.latency ?? 0)
 
     this.#gain = context.createGain()
     this.#gain.gain.value = options.volume ?? 0.35
@@ -70,6 +81,11 @@ export class Metronome {
     // tableau desordonne ferait sauter des temps.
     this.#beats = [...beats].sort((a, b) => a.time - b.time)
     this.reset()
+  }
+
+  /** Retard du moteur, mesure une fois le materiel charge. */
+  setLatency(seconds: number): void {
+    this.#latency = Math.max(0, seconds)
   }
 
   setVolume(value: number): void {
@@ -116,7 +132,9 @@ export class Metronome {
       // Un temps deja passe n'est pas rattrape : le faire sonner en retard est
       // pire que de le sauter.
       if (beat.time >= position) {
-        this.#click(now + (beat.time - position) / rate, beat.position === 1)
+        // L'ecart est en temps de morceau : il se divise par la vitesse. Le
+        // retard du moteur, lui, est deja en temps reel et s'ajoute tel quel.
+        this.#click(now + (beat.time - position) / rate + this.#latency, beat.position === 1)
       }
       this.#next += 1
     }

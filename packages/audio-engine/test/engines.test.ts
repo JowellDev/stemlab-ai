@@ -236,6 +236,54 @@ describe('createPlaybackEngine', () => {
     expect(onFallback.mock.calls[0]?.[0]).toBeInstanceOf(Error)
   })
 
+  it('rapporte la latence du noeud', async () => {
+    const node = {
+      addBuffers: vi.fn(async (_channels: Float32Array[]) => 10),
+      schedule: vi.fn(),
+      setUpdateInterval: vi.fn(),
+      latency: vi.fn(async () => 0.12),
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      inputTime: 0,
+    }
+
+    const engine = await createPlaybackEngine(
+      asAudioContext(new FakeAudioContext()),
+      makeStems(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doublure de noeud
+      { loadStretchFactory: async () => async () => node as any },
+    )
+
+    // Sans cette valeur, tout ce qui doit tomber avec le son arrive en avance.
+    expect(engine.outputLatency).toBeCloseTo(0.12, 5)
+  })
+
+  it('se passe d une latence illisible sans perdre l etirement', async () => {
+    const node = {
+      addBuffers: vi.fn(async (_channels: Float32Array[]) => 10),
+      schedule: vi.fn(),
+      setUpdateInterval: vi.fn(),
+      latency: vi.fn(() => {
+        throw new Error('non disponible')
+      }),
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      inputTime: 0,
+    }
+
+    const engine = await createPlaybackEngine(
+      asAudioContext(new FakeAudioContext()),
+      makeStems(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doublure de noeud
+      { loadStretchFactory: async () => async () => node as any },
+    )
+
+    // Au pire, le metronome retrouve le decalage qu'il avait avant : ce n'est
+    // pas une raison de priver l'utilisateur du tempo independant.
+    expect(engine.supportsIndependentPitch).toBe(true)
+    expect(engine.outputLatency).toBe(0)
+  })
+
   it('retient l etirement quand il se charge', async () => {
     const { node } = {
       node: {

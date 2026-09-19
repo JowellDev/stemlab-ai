@@ -47,6 +47,7 @@ const SCHEDULE_LEAD_SECONDS = 0.25
 export class StretchEngine implements PlaybackEngine {
   readonly supportsIndependentPitch = true
   readonly startLead = SCHEDULE_LEAD_SECONDS
+  readonly outputLatency: number
   readonly duration: number
 
   readonly #context: BaseAudioContext
@@ -60,10 +61,12 @@ export class StretchEngine implements PlaybackEngine {
     node: StretchNode,
     stems: readonly LoadedStem[],
     duration: number,
+    outputLatency: number,
   ) {
     this.#context = context
     this.#node = node
     this.duration = duration
+    this.outputLatency = outputLatency
 
     this.#splitter = context.createChannelSplitter(stems.length * 2)
     node.connect(this.#splitter)
@@ -98,7 +101,15 @@ export class StretchEngine implements PlaybackEngine {
     node.setUpdateInterval(0.1)
     await node.addBuffers(toChannelArrays(stems, length))
 
-    const engine = new StretchEngine(context, node, stems, duration)
+    // Mesuree une fois : elle ne depend que de la taille de bloc du traitement,
+    // pas du materiel charge. Sans elle, tout ce qui doit tomber avec le son
+    // arrive en avance — une centaine de millisecondes, soit un sixieme de temps
+    // a quatre-vingts pulsations par minute.
+    // Une latence illisible ne doit pas priver l'utilisateur de l'etirement :
+    // au pire, le metronome retrouve le decalage qu'il avait avant.
+    const latency = await readLatency(node)
+
+    const engine = new StretchEngine(context, node, stems, duration, latency)
     void sampleRate
     return engine
   }
@@ -190,4 +201,14 @@ export function toChannelArrays(stems: readonly LoadedStem[], length: number): F
   }
 
   return channels
+}
+
+
+async function readLatency(node: StretchNode): Promise<number> {
+  try {
+    const value = await node.latency()
+    return Number.isFinite(value) && value > 0 ? value : 0
+  } catch {
+    return 0
+  }
 }

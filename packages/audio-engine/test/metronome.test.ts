@@ -145,6 +145,44 @@ describe('Metronome', () => {
     expect(rapide.createdOscillators.length).toBeGreaterThan(lent.createdOscillators.length)
   })
 
+  it('retarde les clics de la latence du moteur', () => {
+    const context2 = new FakeAudioContext()
+    const avecLatence = new Metronome(asAudioContext(context2), { latency: 0.12 })
+    avecLatence.setBeats(mesures(8))
+
+    avecLatence.schedule(0, 1, 10)
+
+    // Le moteur d'etirement rend sa sortie apres coup : sans ce retard, le clic
+    // tombe avant le son et s'entend comme un contretemps.
+    expect(context2.createdOscillators[0]!.startedAt).toBeCloseTo(10.12, 5)
+  })
+
+  it('n applique le retard qu une fois, malgre la vitesse', () => {
+    const context2 = new FakeAudioContext()
+    const avecLatence = new Metronome(asAudioContext(context2), { latency: 0.1 })
+    avecLatence.setBeats(mesures(8))
+
+    // Le retard du moteur est en temps reel : il ne se divise pas par la vitesse,
+    // contrairement a l'ecart jusqu'au prochain temps.
+    avecLatence.schedule(0.35, 0.5, 10)
+
+    expect(context2.createdOscillators[0]!.startedAt).toBeCloseTo(10 + 0.15 / 0.5 + 0.1, 5)
+  })
+
+  it('accepte un retard mesure apres coup', () => {
+    metronome.setLatency(0.2)
+    metronome.schedule(0, 1, 10)
+
+    expect(context.createdOscillators[0]!.startedAt).toBeCloseTo(10.2, 5)
+  })
+
+  it('refuse un retard negatif', () => {
+    metronome.setLatency(-1)
+    metronome.schedule(0, 1, 10)
+
+    expect(context.createdOscillators[0]!.startedAt).toBeCloseTo(10, 5)
+  })
+
   it('borne le volume', () => {
     metronome.setVolume(5)
     expect(context.createdGains[0]!.gain.target).toBe(1)

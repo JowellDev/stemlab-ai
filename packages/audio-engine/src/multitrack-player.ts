@@ -124,6 +124,17 @@ export class MultitrackPlayer {
   }
 
   /** Faux quand le moteur de repli est actif : la vitesse deplace alors la hauteur. */
+  /**
+   * Retard entre la position annoncee et le son entendu, en secondes.
+   *
+   * Le moteur d'etirement traite par blocs : sa sortie arrive apres coup. Tout
+   * ce qui doit tomber *avec* le son — un metronome, un clic de repere — ajoute
+   * ce retard a l'instant qu'il calcule depuis la position.
+   */
+  get outputLatency(): number {
+    return this.#engine?.outputLatency ?? 0
+  }
+
   get supportsIndependentPitch(): boolean {
     return this.#engine?.supportsIndependentPitch ?? false
   }

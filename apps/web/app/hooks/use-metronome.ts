@@ -29,7 +29,10 @@ export function useMetronome(
   useEffect(() => {
     if (!player || !enabled || beats.length === 0) return
 
-    const metronome = new Metronome(player.context, { volume })
+    // Le moteur d'etirement rend sa sortie apres un delai fixe : sans cette
+    // compensation, les clics tombent en avance et s'entendent comme un
+    // contretemps.
+    const metronome = new Metronome(player.context, { volume, latency: player.outputLatency })
     metronome.setBeats(beats)
     metronomeRef.current = metronome
 

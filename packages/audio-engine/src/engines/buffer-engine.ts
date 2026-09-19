@@ -22,6 +22,8 @@ export class BufferSourceEngine implements PlaybackEngine {
   readonly supportsIndependentPitch = false
   /** Une source classique demarre a l'instant demande, sans preparation. */
   readonly startLead = 0
+  // Une source de tampon sort son audio a l'instant demande, sans traitement.
+  readonly outputLatency = 0
   readonly duration: number
 
   readonly #context: BaseAudioContext

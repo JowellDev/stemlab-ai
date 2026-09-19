@@ -22,6 +22,16 @@ export interface PlaybackEngine {
    */
   readonly startLead: number
 
+  /**
+   * Retard entre l'instant programme et le son reellement entendu, en secondes.
+   *
+   * Un moteur a traitement par blocs — l'etirement temporel en est un — rend sa
+   * sortie apres un delai fixe. La position annoncee par le lecteur est donc en
+   * avance sur ce que l'oreille percoit. Tout ce qui doit tomber *avec* le son,
+   * un metronome au premier chef, doit ajouter ce retard.
+   */
+  readonly outputLatency: number
+
   /** Noeud de sortie d'une piste, stable pour toute la duree de vie du moteur. */
   outputFor(type: StemType): AudioNode | undefined
 
